@@ -16,7 +16,9 @@
         "title": "yt-spout-syphon-bridge",
         "width": 420,
         "height": 560,
-        "resizable": false,
+        "minWidth": 380,
+        "minHeight": 480,
+        "resizable": true,
         "decorations": false,
         "transparent": false,
         "alwaysOnTop": true

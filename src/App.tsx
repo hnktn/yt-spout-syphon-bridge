@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { usePlayer } from "./hooks/usePlayer";
 import UrlInput from "./components/UrlInput";
 import TransportControls from "./components/TransportControls";
@@ -17,14 +18,32 @@ export default function App() {
 
   const isActive = status.status === "playing" || status.status === "paused" || status.status === "loading";
 
+  const appWindow = getCurrentWindow();
+
   return (
     <div className="min-h-screen bg-[#1a1a1a] text-white flex flex-col">
       {/* タイトルバー (ドラッグ可能) */}
       <div
         data-tauri-drag-region
-        className="h-8 bg-[#111] flex items-center px-4 text-xs text-gray-500 select-none"
+        className="h-8 bg-[#111] flex items-center justify-between px-3 text-xs text-gray-500 select-none"
       >
-        yt-spout-syphon-bridge
+        <span className="text-gray-400">yt-spout-syphon-bridge</span>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => appWindow.minimize()}
+            className="w-5 h-5 rounded hover:bg-gray-700 flex items-center justify-center transition-colors"
+            title="最小化"
+          >
+            <span className="text-gray-400">−</span>
+          </button>
+          <button
+            onClick={() => appWindow.close()}
+            className="w-5 h-5 rounded hover:bg-red-600 flex items-center justify-center transition-colors"
+            title="閉じる"
+          >
+            <span className="text-gray-400 hover:text-white">×</span>
+          </button>
+        </div>
       </div>
 
       <div className="flex-1 flex flex-col gap-4 p-4">
@@ -62,6 +81,16 @@ export default function App() {
           onSelect={setAudioDevice}
           onVolumeChange={setVolume}
         />
+      </div>
+
+      {/* リサイズインジケーター */}
+      <div className="absolute bottom-0 right-0 w-4 h-4 opacity-20 pointer-events-none">
+        <svg viewBox="0 0 16 16" className="text-gray-600">
+          <path
+            d="M16 16L16 12L12 16L16 16ZM16 8L8 16L12 16L16 12L16 8Z"
+            fill="currentColor"
+          />
+        </svg>
       </div>
     </div>
   );
