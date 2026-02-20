@@ -1,0 +1,6 @@
+# Cargo 設定ファイル
+# macOS: Homebrew でインストールした mpv のリンカーパスを指定
+# `brew install mpv` でインストールした libmpv を見つけるための設定
+[env]
+PKG_CONFIG_PATH = "/opt/homebrew/lib/pkgconfig"
+LIBRARY_PATH = "/opt/homebrew/lib"
