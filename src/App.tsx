@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import { usePlayer } from "./hooks/usePlayer";
 import UrlInput from "./components/UrlInput";
 import TransportControls from "./components/TransportControls";
@@ -18,34 +17,8 @@ export default function App() {
 
   const isActive = status.status === "playing" || status.status === "paused" || status.status === "loading";
 
-  const appWindow = getCurrentWindow();
-
   return (
     <div className="min-h-screen bg-[#1a1a1a] text-white flex flex-col">
-      {/* タイトルバー (ドラッグ可能) */}
-      <div
-        data-tauri-drag-region
-        className="h-8 bg-[#111] flex items-center justify-between px-3 text-xs text-gray-500 select-none"
-      >
-        <span className="text-gray-400">yt-spout-syphon-bridge</span>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => appWindow.minimize()}
-            className="w-5 h-5 rounded hover:bg-gray-700 flex items-center justify-center transition-colors"
-            title="最小化"
-          >
-            <span className="text-gray-400">−</span>
-          </button>
-          <button
-            onClick={() => appWindow.close()}
-            className="w-5 h-5 rounded hover:bg-red-600 flex items-center justify-center transition-colors"
-            title="閉じる"
-          >
-            <span className="text-gray-400 hover:text-white">×</span>
-          </button>
-        </div>
-      </div>
-
       <div className="flex-1 flex flex-col gap-4 p-4">
         {/* URL 入力 */}
         <UrlInput
