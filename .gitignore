@@ -1,0 +1,27 @@
+# Node
+node_modules/
+dist/
+
+# Rust / Cargo
+target/
+src-tauri/target/
+
+# Tauri
+src-tauri/gen/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/settings.json
+.idea/
+
+# 環境変数
+.env
+.env.local
+
+# Spout2 / Syphon SDKバイナリ (README だけコミット)
+src-tauri/bindings/spout2/*.lib
+src-tauri/bindings/spout2/*.dll
+src-tauri/bindings/syphon/*.framework
