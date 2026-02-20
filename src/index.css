@@ -1,0 +1,22 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  font-family: Inter, system-ui, -apple-system, sans-serif;
+  font-size: 14px;
+  color-scheme: dark;
+  background-color: #1a1a1a;
+  color: #ffffffde;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+/* Tauri のドラッグ可能領域 */
+[data-tauri-drag-region] {
+  -webkit-app-region: drag;
+}
