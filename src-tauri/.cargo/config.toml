@@ -1,0 +1,17 @@
+[target.aarch64-apple-darwin]
+rustflags = [
+    "-C", "link-arg=-F/Users/haruhisa/Library/CloudStorage/Dropbox/Repos/yt-spout-syphon-bridge/src-tauri/bindings/syphon",
+    "-C", "link-arg=-framework", "-C", "link-arg=OpenGL",
+    "-C", "link-arg=/Users/haruhisa/Library/CloudStorage/Dropbox/Repos/yt-spout-syphon-bridge/src-tauri/bindings/syphon/Syphon.framework/Syphon",
+    "-C", "link-arg=-Wl,-rpath,/Users/haruhisa/Library/CloudStorage/Dropbox/Repos/yt-spout-syphon-bridge/src-tauri/bindings/syphon",
+    "-C", "link-arg=-mmacosx-version-min=13.0"
+]
+
+[target.x86_64-apple-darwin]
+rustflags = [
+    "-C", "link-arg=-F/Users/haruhisa/Library/CloudStorage/Dropbox/Repos/yt-spout-syphon-bridge/src-tauri/bindings/syphon",
+    "-C", "link-arg=-framework", "-C", "link-arg=OpenGL",
+    "-C", "link-arg=/Users/haruhisa/Library/CloudStorage/Dropbox/Repos/yt-spout-syphon-bridge/src-tauri/bindings/syphon/Syphon.framework/Syphon",
+    "-C", "link-arg=-Wl,-rpath,/Users/haruhisa/Library/CloudStorage/Dropbox/Repos/yt-spout-syphon-bridge/src-tauri/bindings/syphon",
+    "-C", "link-arg=-mmacosx-version-min=13.0"
+]
