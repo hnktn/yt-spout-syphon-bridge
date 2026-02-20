@@ -1,5 +1,6 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 
 // ─── 型定義 ──────────────────────────────────────────────────────────────────
 
@@ -24,6 +25,20 @@ export function usePlayer() {
     spout_active: false,
     syphon_active: false,
   });
+
+  // player-status イベントをリッスン
+  useEffect(() => {
+    const unlisten = listen<{ status: string }>("player-status", (event) => {
+      setStatus((prev) => ({
+        ...prev,
+        status: event.payload.status as PlayerStatus["status"],
+      }));
+    });
+
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, []);
 
   const play = useCallback(async (url: string, quality?: string) => {
     try {

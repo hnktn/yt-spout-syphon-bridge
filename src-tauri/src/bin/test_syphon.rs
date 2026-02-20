@@ -20,13 +20,27 @@ fn main() -> Result<()> {
     log::info!("Syphon サーバー名: {}", server_name);
     log::info!("解像度: {}x{}", width, height);
 
+    // mpv インスタンスを作成（テストプログラムでは MpvContext を使用せず、直接作成）
+    log::info!("mpv インスタンスを作成します...");
+    use libmpv2::Mpv;
+    let mpv = Mpv::new().expect("mpv の作成に失敗");
+    mpv.set_property("ytdl", true).expect("ytdl の設定に失敗");
+    mpv.set_property("ytdl-raw-options", "cookies-from-browser=chrome").expect("ytdl-raw-options の設定に失敗");
+    mpv.set_property("ytdl-format", "bestvideo+bestaudio/best").expect("ytdl-format の設定に失敗");
+    mpv.set_property("hwdec", "auto-safe").expect("hwdec の設定に失敗");
+    mpv.set_property("vo", "libmpv").expect("vo の設定に失敗");
+    mpv.set_property("cache", true).expect("cache の設定に失敗");
+    mpv.set_property("cache-secs", 10i64).expect("cache-secs の設定に失敗");
+    // 注意: loadfile は Syphon スレッドで RenderContext 作成後に実行する
+
+    let mpv_handle = mpv.ctx.as_ptr();
+
     // Syphon スレッドを起動
     log::info!("Syphon 出力を起動します...");
 
-    // mpv_handle は NULL で開始（Syphon スレッド内で作成する）
     // テストプログラムなので app_handle は None
     let handle = app_lib::output::syphon::spawn(
-        std::ptr::null_mut(),
+        mpv_handle,
         server_name,
         url,
         width,
@@ -39,10 +53,12 @@ fn main() -> Result<()> {
     log::info!("Ctrl+C で終了します");
 
     // メインスレッドは待機（Ctrl+C まで）
+    // mpv インスタンスを保持し続ける必要がある
     std::thread::park();
 
     // クリーンアップ
     handle.stop();
+    drop(mpv); // mpv を明示的に破棄
     log::info!("Syphon 出力を停止しました");
 
     Ok(())

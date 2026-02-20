@@ -130,7 +130,7 @@ unsafe impl Send for SendableMpvHandle {}
 /// Syphon 出力を別スレッドで起動する
 ///
 /// # 引数
-/// * `mpv_handle` - mpv 内部ハンドルの生ポインタ
+/// * `mpv_handle` - mpv 内部ハンドルの生ポインタ（loadfile 未実行）
 /// * `server_name` - Syphon サーバー名（TouchDesigner で識別用）
 /// * `url` - 再生する URL（RenderContext 作成後に loadfile を実行）
 /// * `width` / `height` - 初期出力解像度（動画ロード後に実際の解像度に調整される）
@@ -149,7 +149,9 @@ pub fn spawn(
     let url = url.to_string();
 
     std::thread::spawn(move || {
+        println!("=== Syphon thread started ===");
         if let Err(e) = syphon_loop(sendable, &server_name, &url, cmd_rx, width, height, app_handle) {
+            println!("!!! Syphon レンダリングループでエラー: {}", e);
             log::error!("Syphon レンダリングループでエラー: {}", e);
         }
     });
@@ -161,52 +163,31 @@ pub fn spawn(
 ///
 /// CGL コンテキストで mpv → FBO → Syphon Server → プレビュー送信
 fn syphon_loop(
-    _mpv_handle: SendableMpvHandle,
+    sendable_handle: SendableMpvHandle,
     server_name: &str,
     url: &str,
     cmd_rx: mpsc::Receiver<SyphonCommand>,
     initial_width: u32,
     initial_height: u32,
-    _app_handle: Option<tauri::AppHandle>,  // 将来のプレビュー機能用に予約
+    app_handle: Option<tauri::AppHandle>,  // プレビュー機能用
 ) -> Result<()> {
-    // CGL コンテキストを作成
-    let gl_ctx = create_cgl_context()?;
+    println!("=== syphon_loop started: {} ===", url);
 
-    // mpv を低レベル API で初期化（RenderContext を先に作成するため）
-    let (render_ctx, mpv_handle) = unsafe {
+    // 既存の mpv ハンドルを取得
+    let mpv_handle = sendable_handle.0;
+    println!("Using existing mpv handle: {:?}", mpv_handle);
+
+    // CGL コンテキストを作成
+    println!("Creating CGL context...");
+    let gl_ctx = create_cgl_context()?;
+    println!("CGL context created: {:?}", gl_ctx);
+
+    // RenderContext を作成
+    let render_ctx = unsafe {
+        println!("Setting CGL context...");
         CGLSetCurrentContext(gl_ctx);
 
-        // 1. 生の mpv ハンドルを作成
-        let mpv_handle = libmpv2_sys::mpv_create();
-        if mpv_handle.is_null() {
-            return Err(anyhow::anyhow!("mpv_create に失敗"));
-        }
-
-        // 2. プロパティを設定（initialize 前に設定する必要がある）
-        let set_property = |name: &str, value: &str| -> Result<()> {
-            let name_cstr = std::ffi::CString::new(name).unwrap();
-            let value_cstr = std::ffi::CString::new(value).unwrap();
-            let ret = libmpv2_sys::mpv_set_property_string(mpv_handle, name_cstr.as_ptr(), value_cstr.as_ptr());
-            if ret < 0 {
-                return Err(anyhow::anyhow!("mpv_set_property_string({}) failed: {}", name, ret));
-            }
-            Ok(())
-        };
-
-        set_property("ytdl", "yes")?;
-        set_property("ytdl-format", "bestvideo+bestaudio/best")?;
-        set_property("hwdec", "auto-safe")?;
-        set_property("vo", "libmpv")?;  // RenderContext API には vo=libmpv が必要
-
-        // キャッシュとバッファリング設定（カクツキ対策）
-        set_property("cache", "yes")?;  // キャッシュを有効化
-        set_property("cache-secs", "10")?;  // 10秒分のキャッシュ
-        set_property("demuxer-max-bytes", "150M")?;  // デマルチプレクサのバッファを150MBに拡大
-        set_property("demuxer-max-back-bytes", "75M")?;  // シークバック用のバッファ
-        set_property("cache-pause-initial", "yes")?;  // 初期バッファリングを待つ
-        set_property("cache-pause-wait", "3")?;  // 再バッファリング時に3秒待つ
-
-        // 3. RenderContext を作成（initialize 前に作成）
+        println!("Creating RenderContext...");
         log::info!("RenderContext を作成します...");
         log::info!("GL コンテキスト: {:?}", gl_ctx);
 
@@ -218,6 +199,7 @@ fn syphon_loop(
         }
 
         let ctx_ptr = &gl_ctx as *const _ as *const std::ffi::c_void;
+        println!("Calling RenderContext::new...");
         log::info!("RenderContext::new を呼び出します (mpv_handle: {:?}, ctx_ptr: {:?})", mpv_handle, ctx_ptr);
 
         let render_ctx = RenderContext::new(
@@ -232,23 +214,14 @@ fn syphon_loop(
         )
         .map_err(|e| anyhow::anyhow!("RenderContext の作成に失敗: {:?}", e))?;
 
+        println!("RenderContext created successfully");
         log::info!("RenderContext を作成しました");
 
-        // 4. mpv を初期化（RenderContext 作成後）
-        let ret = libmpv2_sys::mpv_initialize(mpv_handle);
-        if ret < 0 {
-            return Err(anyhow::anyhow!("mpv_initialize に失敗: {}", ret));
-        }
-
-        log::info!("mpv を初期化しました");
-
-        (render_ctx, mpv_handle)
+        render_ctx
     };
 
-    // Syphon Server を作成
-    let syphon_server = create_syphon_server(server_name, gl_ctx)?;
-
-    // 5. loadfile を実行（initialize 後）
+    // RenderContext 作成後に loadfile を実行
+    println!("Executing loadfile command...");
     unsafe {
         let loadfile_cstr = std::ffi::CString::new("loadfile").unwrap();
         let url_cstr = std::ffi::CString::new(url).unwrap();
@@ -261,48 +234,91 @@ fn syphon_loop(
         ];
         let ret = libmpv2_sys::mpv_command(mpv_handle, args.as_mut_ptr());
         if ret < 0 {
-            log::warn!("loadfile コマンドに失敗: {} (エラーコード: {})", url, ret);
+            println!("loadfile command failed: {}", ret);
+            return Err(anyhow::anyhow!("loadfile コマンドに失敗: {} (エラーコード: {})", url, ret));
         } else {
+            println!("loadfile command executed successfully");
             log::info!("loadfile コマンドを実行: {}", url);
         }
     }
 
-    // 6. 動画の実際の解像度を取得するまで待機
+    // 動画の実際の解像度を取得するまで待機
+    // VIDEO_RECONFIG イベント (id=11) を待ってから解像度を取得する
+    println!("Waiting for video resolution...");
     log::info!("動画の解像度情報を取得中...");
     let (actual_width, actual_height) = unsafe {
-        // 動画がロードされて解像度情報が利用可能になるまで待つ
         let mut width = 0i64;
         let mut height = 0i64;
         let mut attempts = 0;
-        let max_attempts = 100; // 最大10秒待つ（100ms x 100）
+        let max_attempts = 300; // 最大30秒待つ（100ms x 300）
+        let mut video_reconfig_received = false;
+
+        // MPV_EVENT_VIDEO_RECONFIG = 11
+        const MPV_EVENT_VIDEO_RECONFIG: u32 = 11;
 
         loop {
-            let dwidth_cstr = std::ffi::CString::new("dwidth").unwrap();
-            let dheight_cstr = std::ffi::CString::new("dheight").unwrap();
+            // mpv イベントをチェック（ブロッキングなし）
+            let event = libmpv2_sys::mpv_wait_event(mpv_handle, 0.0);
+            if !event.is_null() {
+                let event_id = (*event).event_id;
+                if event_id != 0 { // MPV_EVENT_NONE 以外
+                    if attempts % 10 == 0 || event_id == MPV_EVENT_VIDEO_RECONFIG {
+                        println!("mpv event: id={}", event_id);
+                        log::debug!("mpv event: id={}", event_id);
+                    }
 
-            // MPV_FORMAT_INT64 = 4（libmpv2_sys では mpv_format_MPV_FORMAT_INT64）
-            const MPV_FORMAT_INT64: u32 = 4;
+                    if event_id == MPV_EVENT_VIDEO_RECONFIG {
+                        println!("VIDEO_RECONFIG event received");
+                        video_reconfig_received = true;
+                    }
+                }
+            }
 
-            let ret_w = libmpv2_sys::mpv_get_property(
-                mpv_handle,
-                dwidth_cstr.as_ptr(),
-                MPV_FORMAT_INT64,
-                &mut width as *mut i64 as *mut _,
-            );
-            let ret_h = libmpv2_sys::mpv_get_property(
-                mpv_handle,
-                dheight_cstr.as_ptr(),
-                MPV_FORMAT_INT64,
-                &mut height as *mut i64 as *mut _,
-            );
+            // VIDEO_RECONFIG イベントを受信した後に解像度を取得
+            if video_reconfig_received {
+                let dwidth_cstr = std::ffi::CString::new("dwidth").unwrap();
+                let dheight_cstr = std::ffi::CString::new("dheight").unwrap();
 
-            if ret_w >= 0 && ret_h >= 0 && width > 0 && height > 0 {
-                log::info!("動画の実際の解像度: {}x{}", width, height);
-                break;
+                // MPV_FORMAT_INT64 = 4
+                const MPV_FORMAT_INT64: u32 = 4;
+
+                let ret_w = libmpv2_sys::mpv_get_property(
+                    mpv_handle,
+                    dwidth_cstr.as_ptr(),
+                    MPV_FORMAT_INT64,
+                    &mut width as *mut i64 as *mut _,
+                );
+                let ret_h = libmpv2_sys::mpv_get_property(
+                    mpv_handle,
+                    dheight_cstr.as_ptr(),
+                    MPV_FORMAT_INT64,
+                    &mut height as *mut i64 as *mut _,
+                );
+
+                println!("After VIDEO_RECONFIG: ret_w={}, ret_h={}, width={}, height={}",
+                         ret_w, ret_h, width, height);
+
+                if ret_w >= 0 && ret_h >= 0 && width > 0 && height > 0 {
+                    println!("Got video resolution: {}x{}", width, height);
+                    log::info!("動画の実際の解像度: {}x{}", width, height);
+
+                    // 再生開始イベントを送信（フロントエンドのステータスを "loading" → "playing" に更新）
+                    if let Some(app) = &app_handle {
+                        #[derive(Clone, serde::Serialize)]
+                        struct PlayingEvent {
+                            status: String,
+                        }
+                        let _ = app.emit("player-status", PlayingEvent { status: "playing".to_string() });
+                        log::info!("player-status イベントを送信しました (playing)");
+                    }
+
+                    break;
+                }
             }
 
             attempts += 1;
             if attempts >= max_attempts {
+                println!("Resolution timeout, using initial size: {}x{}", initial_width, initial_height);
                 log::warn!(
                     "動画の解像度取得がタイムアウト、初期値を使用: {}x{}",
                     initial_width, initial_height
@@ -318,14 +334,24 @@ fn syphon_loop(
         (width as u32, height as u32)
     };
 
-    // FBO とテクスチャを実際の解像度で再作成
+    // FBO とテクスチャを実際の解像度で作成
+    println!("Creating FBO with resolution: {}x{}", actual_width, actual_height);
     let (fbo, texture) = create_fbo(actual_width, actual_height);
+    println!("FBO created: fbo={}, texture={}", fbo, texture);
 
+    // Syphon Server を実解像度で作成
+    println!("Creating Syphon server with resolution: {}x{}", actual_width, actual_height);
+    let syphon_server = create_syphon_server(server_name, gl_ctx)?;
+    println!("Syphon server created");
+
+    println!("Starting Syphon rendering loop...");
     log::info!("Syphon レンダリング開始: {} ({}x{})", server_name, actual_width, actual_height);
 
     // レンダリングループ
     let mut consecutive_errors = 0;
     let max_consecutive_errors = 30; // 約0.5秒分のエラーで停止
+    let mut frame_count = 0u64;
+    let preview_interval = 2; // 2フレームに1回プレビューを送信 (約30fps、パフォーマンス優先)
 
     loop {
         // 停止コマンドが届いたら終了
@@ -341,8 +367,24 @@ fn syphon_loop(
             match render_ctx.render::<()>(fbo as i32, actual_width as i32, actual_height as i32, true) {
                 Ok(_) => {
                     consecutive_errors = 0;
+
+                    // 最初のフレームをログ出力
+                    if frame_count == 0 {
+                        println!("First frame rendered successfully!");
+                        log::info!("最初のフレームを描画しました");
+                    }
+
                     // Syphon にテクスチャを公開
                     publish_syphon_frame(&syphon_server, texture, actual_width, actual_height);
+
+                    frame_count += 1;
+
+                    // プレビューを送信
+                    if frame_count % preview_interval == 0 {
+                        if let Some(ref app) = app_handle {
+                            send_preview_frame_blit(app, fbo, actual_width, actual_height);
+                        }
+                    }
                 }
                 Err(e) => {
                     consecutive_errors += 1;
@@ -370,19 +412,7 @@ fn syphon_loop(
         // 1. GL コンテキストをアクティブにする
         CGLSetCurrentContext(gl_ctx);
 
-        // 2. mpv を停止（RenderContext が破棄される前に）
-        log::info!("mpv を停止します");
-        let stop_cmd = std::ffi::CString::new("stop").unwrap();
-        let mut args: Vec<*const std::ffi::c_char> = vec![
-            stop_cmd.as_ptr(),
-            std::ptr::null(),
-        ];
-        libmpv2_sys::mpv_command(mpv_handle, args.as_mut_ptr());
-
-        // 少し待機して mpv の停止を確認
-        std::thread::sleep(Duration::from_millis(100));
-
-        // 3. バッファをクリアするために黒いフレームを複数回送信
+        // 2. バッファをクリアするために黒いフレームを複数回送信
         log::info!("バッファクリア用の黒いフレームを送信します");
 
         // テクスチャを黒でクリア
@@ -405,25 +435,22 @@ fn syphon_loop(
         log::info!("黒いフレームの送信が完了しました (クライアント受信待機中...)");
         std::thread::sleep(Duration::from_millis(200));
 
-        // 4. Syphon Server を解放（stop メソッドは呼ばない）
+        // 3. Syphon Server を解放（stop メソッドは呼ばない）
         log::info!("Syphon Server を解放します");
         drop(syphon_server);
         log::info!("Syphon Server を解放しました");
 
-        // 5. RenderContext を明示的に破棄（GL コンテキストが有効な状態で）
+        // 4. RenderContext を明示的に破棄（GL コンテキストが有効な状態で）
         log::info!("RenderContext を破棄します");
         drop(render_ctx);
 
-        // 6. GL リソースを削除
+        // 5. GL リソースを削除
         log::info!("GL リソースを削除します");
         gl::DeleteFramebuffers(1, &fbo);
         gl::DeleteTextures(1, &texture);
 
-        // 7. mpv を破棄
-        log::info!("mpv インスタンスを破棄します");
-        libmpv2_sys::mpv_terminate_destroy(mpv_handle);
-
-        // 8. 最後に GL コンテキストを破棄
+        // 6. GL コンテキストを破棄
+        // 注意: mpv インスタンスは MpvContext が管理しているので、ここでは破棄しない
         log::info!("GL コンテキストを破棄します");
         CGLDestroyContext(gl_ctx);
     }
@@ -552,12 +579,19 @@ fn publish_syphon_frame(
     width: u32,
     height: u32,
 ) {
+    static FIRST_PUBLISH: std::sync::Once = std::sync::Once::new();
+
     unsafe {
         // NSSize を作成
         let size = NSSize {
             width: width as f64,
             height: height as f64,
         };
+
+        FIRST_PUBLISH.call_once(|| {
+            println!("First Syphon publish: texture_id={}, size={}x{}", texture_id, width, height);
+            log::info!("Syphon 初回送信: texture_id={}, 解像度={}x{}", texture_id, width, height);
+        });
 
         // publishFrameTexture:textureTarget:imageRegion:textureDimensions:flipped:
         let _: () = msg_send![
@@ -608,38 +642,84 @@ unsafe impl Encode for NSRect {
     const ENCODING: Encoding = Encoding::Struct("CGRect", &[NSPoint::ENCODING, NSSize::ENCODING]);
 }
 
-/// プレビューフレームを WebView に送信
-///
-/// FBO からピクセルデータを読み取り、base64 エンコードして Tauri Event で送信
-/// TODO: 将来的に軽量化して実装する（現在は未使用）
-#[allow(dead_code)]
-unsafe fn send_preview_frame(app: &tauri::AppHandle, fbo: gl::types::GLuint, width: u32, height: u32) {
-    // プレビューは縮小して送信（例: 640x360）
-    let preview_width = 640u32;
-    let preview_height = (height as f32 * (preview_width as f32 / width as f32)) as u32;
+/// プレビューフレームを WebView に送信（glBlitFramebuffer で GPU リサイズ）
+unsafe fn send_preview_frame_blit(app: &tauri::AppHandle, src_fbo: gl::types::GLuint, width: u32, height: u32) {
+    // プレビューサイズ（動画のアスペクト比を維持）
+    let preview_width = 320u32;
+    let preview_height = ((height as f32 / width as f32) * preview_width as f32).max(1.0) as u32;
 
-    // ピクセルデータを読み取る
-    gl::BindFramebuffer(gl::FRAMEBUFFER, fbo);
-    let mut pixels = vec![0u8; (width * height * 4) as usize];
+    // 縮小用の一時的な FBO とテクスチャを作成
+    let mut preview_fbo: gl::types::GLuint = 0;
+    let mut preview_texture: gl::types::GLuint = 0;
+
+    gl::GenFramebuffers(1, &mut preview_fbo);
+    gl::GenTextures(1, &mut preview_texture);
+
+    // プレビュー用テクスチャを作成
+    gl::BindTexture(gl::TEXTURE_2D, preview_texture);
+    gl::TexImage2D(
+        gl::TEXTURE_2D,
+        0,
+        gl::RGB as _,
+        preview_width as _,
+        preview_height as _,
+        0,
+        gl::RGB,
+        gl::UNSIGNED_BYTE,
+        std::ptr::null(),
+    );
+    gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::LINEAR as _);
+    gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::LINEAR as _);
+
+    // FBO にテクスチャをアタッチ
+    gl::BindFramebuffer(gl::FRAMEBUFFER, preview_fbo);
+    gl::FramebufferTexture2D(
+        gl::FRAMEBUFFER,
+        gl::COLOR_ATTACHMENT0,
+        gl::TEXTURE_2D,
+        preview_texture,
+        0,
+    );
+
+    // glBlitFramebuffer で GPU 上でリサイズコピー
+    gl::BindFramebuffer(gl::READ_FRAMEBUFFER, src_fbo);
+    gl::BindFramebuffer(gl::DRAW_FRAMEBUFFER, preview_fbo);
+    gl::BlitFramebuffer(
+        0, 0, width as _, height as _,           // ソース領域
+        0, 0, preview_width as _, preview_height as _, // 宛先領域
+        gl::COLOR_BUFFER_BIT,
+        gl::LINEAR, // リニア補間
+    );
+
+    // 縮小したピクセルデータを読み取る
+    gl::BindFramebuffer(gl::FRAMEBUFFER, preview_fbo);
+    let mut pixels = vec![0u8; (preview_width * preview_height * 3) as usize];
     gl::ReadPixels(
         0,
         0,
-        width as i32,
-        height as i32,
-        gl::RGBA,
+        preview_width as i32,
+        preview_height as i32,
+        gl::RGB,
         gl::UNSIGNED_BYTE,
         pixels.as_mut_ptr() as *mut _,
     );
 
-    // RGBA を RGB に変換（alpha チャンネルを削除）
-    let rgb_pixels: Vec<u8> = pixels
-        .chunks_exact(4)
-        .flat_map(|chunk| [chunk[0], chunk[1], chunk[2]])
-        .collect();
+    // GL エラーチェック
+    let gl_error = gl::GetError();
+    if gl_error != gl::NO_ERROR {
+        log::warn!("プレビューフレーム読み取り時の GL エラー: 0x{:X}", gl_error);
+        gl::DeleteFramebuffers(1, &preview_fbo);
+        gl::DeleteTextures(1, &preview_texture);
+        return;
+    }
+
+    // 一時リソースをクリーンアップ
+    gl::DeleteFramebuffers(1, &preview_fbo);
+    gl::DeleteTextures(1, &preview_texture);
 
     // base64 エンコード
     use base64::Engine;
-    let base64_data = base64::engine::general_purpose::STANDARD.encode(&rgb_pixels);
+    let base64_data = base64::engine::general_purpose::STANDARD.encode(&pixels);
 
     // Tauri Event で送信
     #[derive(serde::Serialize, Clone)]
@@ -652,8 +732,8 @@ unsafe fn send_preview_frame(app: &tauri::AppHandle, fbo: gl::types::GLuint, wid
     let _ = app.emit(
         "preview-frame",
         PreviewFrame {
-            width,
-            height,
+            width: preview_width,
+            height: preview_height,
             data: base64_data,
         },
     );

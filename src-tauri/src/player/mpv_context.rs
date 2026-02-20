@@ -26,12 +26,16 @@ pub struct MpvContext {
 }
 
 impl MpvContext {
-    /// mpv を初期化する（再生は開始しない）
-    pub fn new(url: &str, quality: Option<&str>) -> Result<Self> {
+    /// mpv を初期化する（loadfile は実行しない）
+    /// 注意: RenderContext を作成してから load_file() を呼ぶ必要がある
+    pub fn new(_url: &str, quality: Option<&str>) -> Result<Self> {
         let mpv = Mpv::new().map_err(mpv_err)?;
 
         // yt-dlp 連携を有効化（mpv が内蔵で呼び出す）
         mpv.set_property("ytdl", true).map_err(mpv_err)?;
+
+        // Chrome クッキーを使用
+        mpv.set_property("ytdl-raw-options", "cookies-from-browser=chrome").map_err(mpv_err)?;
 
         // 画質設定（デフォルト: best）
         let format = match quality {
@@ -45,6 +49,9 @@ impl MpvContext {
         // ハードウェアアクセラレーション（可能なら使用）
         mpv.set_property("hwdec", "auto-safe").map_err(mpv_err)?;
 
+        // RenderContext API を使用するため vo=libmpv を設定
+        mpv.set_property("vo", "libmpv").map_err(mpv_err)?;
+
         // キャッシュとバッファリング設定（カクツキ対策）
         mpv.set_property("cache", true).map_err(mpv_err)?;
         mpv.set_property("cache-secs", 10i64).map_err(mpv_err)?;
@@ -53,17 +60,16 @@ impl MpvContext {
         mpv.set_property("cache-pause-initial", true).map_err(mpv_err)?;
         mpv.set_property("cache-pause-wait", 3i64).map_err(mpv_err)?;
 
-        // NOTE: vo は設定しない（Syphon スレッドで RenderContext API を使用するため）
-
-        // NOTE: loadfile は Syphon スレッドで RenderContext 作成後に実行する
-        // URL は player/mod.rs 側で保持し、Syphon に渡す
+        // 注意: loadfile は RenderContext 作成後に Syphon スレッドで実行する
 
         Ok(Self { mpv })
     }
 
-    /// ファイルを読み込んで再生を開始する
+    /// URL をロードして再生を開始する
+    /// 注意: RenderContext 作成後に呼ぶ必要がある
     pub fn load_file(&self, url: &str) -> Result<()> {
         self.mpv.command("loadfile", &[url, "replace"]).map_err(mpv_err)?;
+        log::info!("loadfile コマンドを実行: {}", url);
         Ok(())
     }
 

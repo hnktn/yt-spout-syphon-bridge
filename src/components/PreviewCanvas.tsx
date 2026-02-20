@@ -2,36 +2,72 @@ import { useEffect, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
 
 interface PreviewFramePayload {
-  data: string; // base64 エンコードされた RGBA ピクセルデータ
+  width: number;
+  height: number;
+  data: string; // base64 エンコードされた RGB ピクセルデータ
 }
-
-const PREVIEW_WIDTH = 1280;
-const PREVIEW_HEIGHT = 720;
 
 export default function PreviewCanvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
+    console.log("PreviewCanvas mounted, registering event listener...");
+
     const canvas = canvasRef.current;
-    if (!canvas) return;
+    if (!canvas) {
+      console.error("Canvas ref is null");
+      return;
+    }
 
     const ctx = canvas.getContext("2d");
-    if (!ctx) return;
+    if (!ctx) {
+      console.error("Failed to get 2d context");
+      return;
+    }
+
+    console.log("Canvas and context ready, listening for preview-frame events");
 
     // Tauri Event リスナーを登録
     const unlisten = listen<PreviewFramePayload>("preview-frame", (event) => {
-      const { data } = event.payload;
+      const { width, height, data } = event.payload;
 
-      // base64 → Uint8Array に復号
-      const binary = atob(data);
-      const len = binary.length;
-      const pixels = new Uint8ClampedArray(len);
-      for (let i = 0; i < len; i++) {
-        pixels[i] = binary.charCodeAt(i);
+      // Canvas サイズを動的に調整
+      if (canvas.width !== width || canvas.height !== height) {
+        canvas.width = width;
+        canvas.height = height;
       }
 
-      // ImageData を作成して Canvas に描画
-      const imageData = new ImageData(pixels, PREVIEW_WIDTH, PREVIEW_HEIGHT);
+      // base64 → Uint8Array に復号（RGB形式）
+      const binary = atob(data);
+      const len = binary.length;
+      const rgbPixels = new Uint8ClampedArray(len);
+      for (let i = 0; i < len; i++) {
+        rgbPixels[i] = binary.charCodeAt(i);
+      }
+
+      // RGB → RGBA に変換し、同時に上下反転（OpenGL と Canvas の Y 軸が逆）
+      const rgbaPixels = new Uint8ClampedArray(width * height * 4);
+      const rowSizeRGB = width * 3;
+      const rowSizeRGBA = width * 4;
+
+      for (let y = 0; y < height; y++) {
+        // 行を反転: 上から y 行目 → 下から y 行目に配置
+        const srcRowStart = y * rowSizeRGB;
+        const dstRowStart = (height - 1 - y) * rowSizeRGBA;
+
+        for (let x = 0; x < width; x++) {
+          const rgbIdx = srcRowStart + x * 3;
+          const rgbaIdx = dstRowStart + x * 4;
+
+          rgbaPixels[rgbaIdx] = rgbPixels[rgbIdx];           // R
+          rgbaPixels[rgbaIdx + 1] = rgbPixels[rgbIdx + 1];   // G
+          rgbaPixels[rgbaIdx + 2] = rgbPixels[rgbIdx + 2];   // B
+          rgbaPixels[rgbaIdx + 3] = 255;                     // A (完全不透明)
+        }
+      }
+
+      // ImageData を作成して描画
+      const imageData = new ImageData(rgbaPixels, width, height);
       ctx.putImageData(imageData, 0, 0);
     });
 
@@ -47,9 +83,10 @@ export default function PreviewCanvas() {
       </label>
       <canvas
         ref={canvasRef}
-        width={PREVIEW_WIDTH}
-        height={PREVIEW_HEIGHT}
-        className="w-full aspect-video bg-black rounded border border-gray-700"
+        width={320}
+        height={180}
+        className="w-full bg-black rounded border border-gray-700"
+        style={{ aspectRatio: "auto" }}
       />
     </div>
   );

@@ -68,6 +68,7 @@ impl PlayerState {
     // ─── 再生制御 ─────────────────────────────────────────────────────────────
 
     pub async fn play(&self, url: &str, quality: Option<&str>) -> Result<()> {
+        println!("=== play() called with URL: {} ===", url);
         let mut inner = self.inner.lock().unwrap();
 
         // 既存のセッションをクリア（プレビューウィンドウと Syphon を停止）
@@ -81,13 +82,14 @@ impl PlayerState {
         inner.mpv = None;
         inner.output_active = false;
 
+        println!("mpv を初期化: URL={}", url);
         log::info!("mpv を初期化: URL={}", url);
 
         // mpv を初期化して再生開始
         let ctx = MpvContext::new(url, quality)?;
 
         // Syphon 出力を別スレッドで起動する (macOS のみ)
-        // RenderContext 作成後に loadfile を実行するため、URL を渡す
+        // Syphon スレッド内で RenderContext を作成してから loadfile を実行する
         // app_handle を渡すことで、プレビューも Syphon から直接送信される
         #[cfg(target_os = "macos")]
         {
