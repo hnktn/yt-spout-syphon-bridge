@@ -38,6 +38,10 @@ struct PlayerInner {
     status: PlayStatus,
     current_url: Option<String>,
     output_active: bool,
+    /// UI で設定されたボリューム値（再生開始時に適用）
+    pending_volume: u8,
+    /// UI で設定されたミュート状態（再生開始時に適用）
+    pending_mute: bool,
 }
 
 /// プレビューウィンドウの解像度
@@ -55,6 +59,8 @@ impl PlayerState {
                 status: PlayStatus::Idle,
                 current_url: None,
                 output_active: false,
+                pending_volume: 100, // デフォルトは100%
+                pending_mute: false,  // デフォルトはミュート解除
             })),
             app_handle: None,
         }
@@ -87,7 +93,16 @@ impl PlayerState {
         log::info!("mpv を初期化: URL={}", url);
 
         // mpv を初期化して再生開始
-        let ctx = MpvContext::new(url, quality)?;
+        let mut ctx = MpvContext::new(url, quality)?;
+
+        // UI で設定されたボリュームとミュート状態を適用
+        if let Err(e) = ctx.set_volume(inner.pending_volume) {
+            log::warn!("初期ボリューム設定に失敗: {}", e);
+        }
+        if let Err(e) = ctx.set_mute(inner.pending_mute) {
+            log::warn!("初期ミュート設定に失敗: {}", e);
+        }
+        log::info!("初期オーディオ設定を適用: volume={}, mute={}", inner.pending_volume, inner.pending_mute);
 
         // Syphon 出力を別スレッドで起動する (macOS のみ)
         // Syphon スレッド内で RenderContext を作成してから loadfile を実行する
@@ -212,12 +227,37 @@ impl PlayerState {
     }
 
     pub async fn set_volume(&self, volume: u8) -> Result<()> {
-        let inner = self.inner.lock()
+        let mut inner = self.inner.lock()
             .map_err(|e| anyhow::anyhow!("Mutex ロック失敗: {}", e))?;
+        // pending_volume を常に更新（次回再生時に適用される）
+        inner.pending_volume = volume;
+        // mpv が起動中であれば即座に適用
         if let Some(mpv) = &inner.mpv {
             mpv.set_volume(volume).map_err(|e| anyhow::anyhow!("{}", e))?;
         }
         Ok(())
+    }
+
+    pub async fn set_mute(&self, mute: bool) -> Result<()> {
+        let mut inner = self.inner.lock()
+            .map_err(|e| anyhow::anyhow!("Mutex ロック失敗: {}", e))?;
+        // pending_mute を常に更新（次回再生時に適用される）
+        inner.pending_mute = mute;
+        // mpv が起動中であれば即座に適用
+        if let Some(mpv) = &inner.mpv {
+            mpv.set_mute(mute).map_err(|e| anyhow::anyhow!("{}", e))?;
+        }
+        Ok(())
+    }
+
+    pub fn get_mute(&self) -> Result<bool> {
+        let inner = self.inner.lock()
+            .map_err(|e| anyhow::anyhow!("Mutex ロック失敗: {}", e))?;
+        if let Some(mpv) = &inner.mpv {
+            return mpv.get_mute().map_err(|e| anyhow::anyhow!("{}", e));
+        }
+        // mpv が起動していない場合は pending_mute を返す
+        Ok(inner.pending_mute)
     }
 
     // ─── プレイヤー制御の拡張機能 ─────────────────────────────────────────────

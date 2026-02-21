@@ -20,3 +20,52 @@
 [data-tauri-drag-region] {
   -webkit-app-region: drag;
 }
+
+/* ─── カスタム Range Input スタイル ───────────────────────────────────────── */
+/* ミニマルなスライダーノブのデザイン */
+
+/* Chrome/Safari/Edge */
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #989898; /* text-primary */
+  cursor: pointer;
+  border: none;
+  margin-top: -3.5px; /* (8px - 1px) / 2 でトラック中央に配置 */
+}
+
+input[type="range"]::-webkit-slider-thumb:hover {
+  background: #b0b0b0; /* accent */
+}
+
+input[type="range"]::-webkit-slider-runnable-track {
+  width: 100%;
+  height: 1px;
+  background: #191919; /* surface-2 */
+  border: none;
+}
+
+/* Firefox */
+input[type="range"]::-moz-range-thumb {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #989898; /* text-primary */
+  cursor: pointer;
+  border: none;
+  margin-top: -3.5px; /* (8px - 1px) / 2 でトラック中央に配置 */
+}
+
+input[type="range"]::-moz-range-thumb:hover {
+  background: #b0b0b0; /* accent */
+}
+
+input[type="range"]::-moz-range-track {
+  width: 100%;
+  height: 1px;
+  background: #191919; /* surface-2 */
+  border: none;
+}

@@ -177,6 +177,23 @@ impl MpvContext {
         Ok(())
     }
 
+    /// ミュート設定
+    pub fn set_mute(&self, mute: bool) -> Result<()> {
+        self.mpv.set_property("mute", mute).map_err(mpv_err)?;
+        Ok(())
+    }
+
+    /// ミュート状態を取得
+    pub fn get_mute(&self) -> Result<bool> {
+        match self.mpv.get_property("mute") {
+            Ok(mute) => Ok(mute),
+            Err(e) => {
+                log::warn!("mute 取得失敗: {:?}", e);
+                Ok(false)
+            }
+        }
+    }
+
     /// ループ再生の設定
     pub fn set_loop(&self, enabled: bool) -> Result<()> {
         let value = if enabled { "inf" } else { "no" };

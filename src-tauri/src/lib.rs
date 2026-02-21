@@ -27,6 +27,8 @@ pub fn run() {
             commands::get_audio_devices,
             commands::set_audio_device,
             commands::set_volume,
+            commands::set_mute,
+            commands::get_mute,
             commands::set_loop,
             commands::get_loop,
             commands::seek,

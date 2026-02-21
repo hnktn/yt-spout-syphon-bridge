@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { Pause, Play, Square, Repeat, ChevronLeft, ChevronRight } from "lucide-react";
 
 interface PlayerControlsProps {
   isPlaying: boolean;
@@ -130,17 +131,17 @@ export default function PlayerControls({ isPlaying, onPause, onStop }: PlayerCon
   if (!isPlaying) return null;
 
   return (
-    <div className="flex flex-col gap-2 p-2 bg-gray-800 rounded border border-gray-700">
+    <div className="flex flex-col gap-2 p-2 bg-surface-1 border border-surface-border rounded-sm">
       {/* 動画タイトル */}
       {mediaTitle && (
-        <div className="text-sm font-medium text-white truncate" title={mediaTitle}>
+        <div className="text-xs text-text-primary truncate uppercase tracking-wide" title={mediaTitle}>
           {mediaTitle}
         </div>
       )}
 
       {/* 再生時間表示とシークバー */}
       <div className="flex flex-col gap-1">
-        <div className="flex justify-between text-xs text-gray-400">
+        <div className="flex justify-between text-xs text-text-muted font-mono">
           <span>{formatTime(timePos)}</span>
           <span>{formatTime(duration)}</span>
         </div>
@@ -150,82 +151,85 @@ export default function PlayerControls({ isPlaying, onPause, onStop }: PlayerCon
           max={duration || 100}
           value={timePos}
           onChange={(e) => handleSeek(parseFloat(e.target.value))}
-          className="w-full h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
+          className="w-full h-px bg-surface-2 appearance-none cursor-pointer accent-accent"
           disabled={!duration}
         />
       </div>
 
       {/* コントロールボタン */}
-      <div className="flex items-center justify-between gap-2 flex-wrap">
+      <div className="flex items-center justify-between gap-1.5 flex-wrap">
         {/* 再生制御ボタン */}
-        <div className="flex gap-1">
+        <div className="flex gap-0.5">
           <button
             onClick={onPause}
-            className="px-2 py-1 text-xs bg-gray-700 text-gray-300 rounded hover:bg-gray-600 transition-colors"
+            className="w-6 h-6 flex items-center justify-center bg-surface-2 border border-surface-border-2 text-text-secondary rounded-sm hover:bg-surface-3 hover:border-surface-border-3 transition-colors"
             title="一時停止 / 再開"
           >
-            ⏯
+            <Pause className="w-3 h-3" />
           </button>
           <button
             onClick={onStop}
-            className="px-2 py-1 text-xs bg-gray-700 text-gray-300 rounded hover:bg-gray-600 transition-colors"
+            className="w-6 h-6 flex items-center justify-center bg-surface-2 border border-surface-border-2 text-text-secondary rounded-sm hover:bg-surface-3 hover:border-surface-border-3 transition-colors"
             title="停止"
           >
-            ⏹
+            <Square className="w-3 h-3" />
           </button>
         </div>
 
         {/* ループトグル */}
         <button
           onClick={handleLoopToggle}
-          className={`px-2 py-1 text-xs rounded transition-colors ${
+          className={`flex items-center gap-1 px-1.5 py-0.5 text-xs rounded-sm border transition-colors ${
             loop
-              ? "bg-blue-600 text-white hover:bg-blue-700"
-              : "bg-gray-700 text-gray-300 hover:bg-gray-600"
+              ? "bg-surface-3 border-surface-border-3 text-accent"
+              : "bg-surface-2 border-surface-border-2 text-text-muted hover:bg-surface-3 hover:border-surface-border-3"
           }`}
           title={loop ? "ループ再生中" : "ループ再生オフ"}
         >
-          🔁 {loop ? "ON" : "OFF"}
+          <Repeat className="w-3 h-3" />
+          <span className="uppercase tracking-wide">{loop ? "ON" : "OFF"}</span>
         </button>
 
         {/* 再生速度 */}
-        <div className="flex items-center gap-2">
-          <label className="text-xs text-gray-400">速度:</label>
+        <div className="flex items-center gap-1">
+          <label className="text-xs text-text-muted uppercase tracking-wide">SPD</label>
           <select
             value={speed}
             onChange={(e) => handleSpeedChange(parseFloat(e.target.value))}
-            className={`px-2 py-1 text-xs rounded border focus:outline-none focus:border-blue-500 ${
+            className={`px-1.5 py-0.5 text-xs rounded-sm border focus:outline-none font-mono ${
               Math.abs(speed - 1.0) > 0.01
-                ? "bg-blue-600 text-white border-blue-500"
-                : "bg-gray-700 text-gray-200 border-gray-600"
+                ? "bg-surface-3 border-surface-border-3 text-accent"
+                : "bg-surface-2 border-surface-border-2 text-text-secondary"
             }`}
           >
-            <option value={0.25}>0.25x</option>
-            <option value={0.5}>0.5x</option>
-            <option value={0.75}>0.75x</option>
-            <option value={1.0}>1.0x (標準)</option>
-            <option value={1.25}>1.25x</option>
-            <option value={1.5}>1.5x</option>
-            <option value={2.0}>2.0x</option>
-            <option value={4.0}>4.0x</option>
+            <option value={0.25}>0.25</option>
+            <option value={0.5}>0.50</option>
+            <option value={0.75}>0.75</option>
+            <option value={1.0}>1.00</option>
+            <option value={1.25}>1.25</option>
+            <option value={1.5}>1.50</option>
+            <option value={2.0}>2.00</option>
+            <option value={4.0}>4.00</option>
           </select>
         </div>
 
         {/* シークボタン */}
-        <div className="flex gap-1">
+        <div className="flex gap-0.5">
           <button
             onClick={() => handleSeek(Math.max(0, timePos - 10))}
-            className="px-1.5 py-0.5 text-xs bg-gray-700 text-gray-300 rounded hover:bg-gray-600 transition-colors"
+            className="flex items-center gap-0.5 px-1 py-0.5 text-xs bg-surface-2 border border-surface-border-2 text-text-muted rounded-sm hover:bg-surface-3 hover:border-surface-border-3 transition-colors font-mono"
             title="10秒戻る"
           >
-            -10s
+            <ChevronLeft className="w-2.5 h-2.5" />
+            <span>10</span>
           </button>
           <button
             onClick={() => handleSeek(timePos + 10)}
-            className="px-1.5 py-0.5 text-xs bg-gray-700 text-gray-300 rounded hover:bg-gray-600 transition-colors"
+            className="flex items-center gap-0.5 px-1 py-0.5 text-xs bg-surface-2 border border-surface-border-2 text-text-muted rounded-sm hover:bg-surface-3 hover:border-surface-border-3 transition-colors font-mono"
             title="10秒進む"
           >
-            +10s
+            <span>10</span>
+            <ChevronRight className="w-2.5 h-2.5" />
           </button>
         </div>
       </div>

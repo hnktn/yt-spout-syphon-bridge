@@ -137,6 +137,18 @@ pub async fn set_volume(volume: u8, state: State<'_, PlayerState>) -> Result<(),
         .map_err(|e| e.to_string())
 }
 
+/// ミュート設定
+#[tauri::command]
+pub async fn set_mute(mute: bool, state: State<'_, PlayerState>) -> Result<(), String> {
+    state.set_mute(mute).await.map_err(|e| e.to_string())
+}
+
+/// ミュート状態を取得
+#[tauri::command]
+pub fn get_mute(state: State<'_, PlayerState>) -> Result<bool, String> {
+    state.get_mute().map_err(|e| e.to_string())
+}
+
 // ─── プレイヤー制御の拡張機能 ─────────────────────────────────────────────
 
 /// ループ再生を設定
