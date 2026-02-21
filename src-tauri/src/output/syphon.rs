@@ -115,11 +115,20 @@ pub enum SyphonCommand {
 /// Syphon 出力ハンドル
 pub struct SyphonHandle {
     pub cmd_tx: mpsc::Sender<SyphonCommand>,
+    pub thread_handle: Option<std::thread::JoinHandle<()>>,
 }
 
 impl SyphonHandle {
-    pub fn stop(&self) {
+    pub fn stop(mut self) {
+        // 停止コマンドを送信
         let _ = self.cmd_tx.send(SyphonCommand::Stop);
+
+        // スレッドの終了を待つ（最大3秒）
+        if let Some(handle) = self.thread_handle.take() {
+            log::info!("Syphon スレッドの終了を待機中...");
+            let _ = handle.join();
+            log::info!("Syphon スレッドが終了しました");
+        }
     }
 }
 
@@ -148,15 +157,19 @@ pub fn spawn(
     let server_name = server_name.to_string();
     let url = url.to_string();
 
-    std::thread::spawn(move || {
+    let thread_handle = std::thread::spawn(move || {
         println!("=== Syphon thread started ===");
         if let Err(e) = syphon_loop(sendable, &server_name, &url, cmd_rx, width, height, app_handle) {
             println!("!!! Syphon レンダリングループでエラー: {}", e);
             log::error!("Syphon レンダリングループでエラー: {}", e);
         }
+        println!("=== Syphon thread finished ===");
     });
 
-    Ok(SyphonHandle { cmd_tx })
+    Ok(SyphonHandle {
+        cmd_tx,
+        thread_handle: Some(thread_handle),
+    })
 }
 
 /// Syphon レンダリングループ
@@ -276,8 +289,8 @@ fn syphon_loop(
 
             // VIDEO_RECONFIG イベントを受信した後に解像度を取得
             if video_reconfig_received {
-                let dwidth_cstr = std::ffi::CString::new("dwidth").unwrap();
-                let dheight_cstr = std::ffi::CString::new("dheight").unwrap();
+                let dwidth_cstr = std::ffi::CString::new("width").unwrap();
+                let dheight_cstr = std::ffi::CString::new("height").unwrap();
 
                 // MPV_FORMAT_INT64 = 4
                 const MPV_FORMAT_INT64: u32 = 4;
@@ -435,7 +448,15 @@ fn syphon_loop(
         log::info!("黒いフレームの送信が完了しました (クライアント受信待機中...)");
         std::thread::sleep(Duration::from_millis(200));
 
-        // 3. Syphon Server を解放（stop メソッドは呼ばない）
+        // 3. Syphon Server を停止して解放
+        log::info!("Syphon Server を停止します");
+        // [server stop] を呼び出して内部の GCD キューを適切にクリーンアップ
+        let _: () = msg_send![&*syphon_server, stop];
+        log::info!("Syphon Server の stop メソッドを呼び出しました");
+
+        // GCD キューのクリーンアップを待つ（十分な時間を確保）
+        std::thread::sleep(Duration::from_millis(500));
+
         log::info!("Syphon Server を解放します");
         drop(syphon_server);
         log::info!("Syphon Server を解放しました");
