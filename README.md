@@ -6,7 +6,7 @@ TouchDesigner, Resolume, VDMX などの映像ツールと組み合わせて使�
 
 ## スクリーンショット
 
-![app-icon](app-icon.png)
+![screenshot](docs/screenshot.png)
 
 ## 機能
 
