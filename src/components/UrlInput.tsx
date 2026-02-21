@@ -6,9 +6,10 @@ interface UrlInputProps {
   onSubmit: () => void;
   disabled?: boolean;
   isLoading?: boolean;
+  isPlaying?: boolean;
 }
 
-export default function UrlInput({ url, onChange, onSubmit, disabled, isLoading }: UrlInputProps) {
+export default function UrlInput({ url, onChange, onSubmit, disabled, isLoading, isPlaying }: UrlInputProps) {
   return (
     <div className="flex gap-1">
       <input
@@ -34,7 +35,7 @@ export default function UrlInput({ url, onChange, onSubmit, disabled, isLoading 
         {isLoading ? (
           <Loader2 className="w-4 h-4 animate-spin text-text-secondary" />
         ) : (
-          <Play className="w-4 h-4 text-text-primary" fill="currentColor" />
+          <Play className={`w-4 h-4 ${isPlaying ? "text-accent" : "text-text-primary"}`} fill="currentColor" />
         )}
       </button>
     </div>
