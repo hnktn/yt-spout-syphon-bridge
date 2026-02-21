@@ -181,7 +181,7 @@ export default function PlayerControls({ isPlaying, onPause, onStop }: PlayerCon
           onClick={handleLoopToggle}
           className={`flex items-center gap-1 px-1.5 py-0.5 text-xs rounded-sm border transition-colors ${
             loop
-              ? "bg-surface-3 border-surface-border-3 text-accent"
+              ? "bg-surface-3 border-surface-border-3 text-text-primary"
               : "bg-surface-2 border-surface-border-2 text-text-muted hover:bg-surface-3 hover:border-surface-border-3"
           }`}
           title={loop ? "ループ再生中" : "ループ再生オフ"}

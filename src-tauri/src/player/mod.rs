@@ -42,6 +42,8 @@ struct PlayerInner {
     pending_volume: u8,
     /// UI で設定されたミュート状態（再生開始時に適用）
     pending_mute: bool,
+    /// UI で設定されたループ状態（再生開始時に適用）
+    pending_loop: bool,
 }
 
 /// プレビューウィンドウの解像度
@@ -61,6 +63,7 @@ impl PlayerState {
                 output_active: false,
                 pending_volume: 100, // デフォルトは100%
                 pending_mute: false,  // デフォルトはミュート解除
+                pending_loop: false,  // デフォルトはループなし
             })),
             app_handle: None,
         }
@@ -102,7 +105,10 @@ impl PlayerState {
         if let Err(e) = ctx.set_mute(inner.pending_mute) {
             log::warn!("初期ミュート設定に失敗: {}", e);
         }
-        log::info!("初期オーディオ設定を適用: volume={}, mute={}", inner.pending_volume, inner.pending_mute);
+        if let Err(e) = ctx.set_loop(inner.pending_loop) {
+            log::warn!("初期ループ設定に失敗: {}", e);
+        }
+        log::info!("初期設定を適用: volume={}, mute={}, loop={}", inner.pending_volume, inner.pending_mute, inner.pending_loop);
 
         // Syphon 出力を別スレッドで起動する (macOS のみ)
         // Syphon スレッド内で RenderContext を作成してから loadfile を実行する
@@ -263,8 +269,10 @@ impl PlayerState {
     // ─── プレイヤー制御の拡張機能 ─────────────────────────────────────────────
 
     pub async fn set_loop(&self, enabled: bool) -> Result<()> {
-        let inner = self.inner.lock()
+        let mut inner = self.inner.lock()
             .map_err(|e| anyhow::anyhow!("Mutex ロック失敗: {}", e))?;
+        // pending_loop を常に更新（次回再生時に引き継がれる）
+        inner.pending_loop = enabled;
         if let Some(mpv) = &inner.mpv {
             mpv.set_loop(enabled).map_err(|e| anyhow::anyhow!("{}", e))?;
         }
