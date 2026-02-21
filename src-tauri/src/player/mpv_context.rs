@@ -34,6 +34,11 @@ impl MpvContext {
         // yt-dlp 連携を有効化（mpv が内蔵で呼び出す）
         mpv.set_property("ytdl", true).map_err(mpv_err)?;
 
+        // yt-dlp のパスを解決して mpv に設定
+        let ytdlp_path = Self::resolve_ytdlp_path();
+        mpv.set_property("script-opts", format!("ytdl_hook-ytdl_path={}", ytdlp_path)).map_err(mpv_err)?;
+        log::info!("yt-dlp パスを設定: {}", ytdlp_path);
+
         // Chrome クッキーを使用
         mpv.set_property("ytdl-raw-options", "cookies-from-browser=chrome").map_err(mpv_err)?;
 
@@ -66,6 +71,33 @@ impl MpvContext {
         // 注意: loadfile は RenderContext 作成後に Syphon スレッドで実行する
 
         Ok(Self { mpv })
+    }
+
+    /// yt-dlp のパスを解決する
+    /// 優先順位: 1) .app バンドル内 2) Homebrew 3) フォールバック
+    fn resolve_ytdlp_path() -> String {
+        // 1. バンドル済みバイナリ: 実行ファイルと同じディレクトリに配置される
+        if let Ok(exe) = std::env::current_exe() {
+            if let Some(dir) = exe.parent() {
+                let bundled = dir.join("yt-dlp");
+                if bundled.exists() {
+                    log::info!("バンドル済み yt-dlp を使用: {:?}", bundled);
+                    return bundled.to_string_lossy().to_string();
+                }
+            }
+        }
+
+        // 2. Homebrew の既知パス
+        for path in &["/opt/homebrew/bin/yt-dlp", "/usr/local/bin/yt-dlp"] {
+            if std::path::Path::new(path).exists() {
+                log::info!("システムの yt-dlp を使用: {}", path);
+                return path.to_string();
+            }
+        }
+
+        // 3. フォールバック（PATH 任せ）
+        log::warn!("yt-dlp が見つかりません。PATH から解決を試みます。");
+        "yt-dlp".to_string()
     }
 
     /// mpv 内部ハンドルへの生ポインタを返す

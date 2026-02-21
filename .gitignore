@@ -25,3 +25,4 @@ Thumbs.db
 src-tauri/bindings/spout2/*.lib
 src-tauri/bindings/spout2/*.dll
 src-tauri/bindings/syphon/*.framework
+src-tauri/binaries/yt-dlp-*
