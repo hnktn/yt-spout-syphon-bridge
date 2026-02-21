@@ -32,8 +32,8 @@
       <stop offset="100%" stop-color="#FFFFFF"/>
     </linearGradient>
 
-    <!-- 全体グラデーション(幹+枝を通じて赤→白): x1=左端(288), x2=右端(736) -->
-    <linearGradient id="grad-flow" x1="288" y1="512" x2="736" y2="512" gradientUnits="userSpaceOnUse">
+    <!-- 全体グラデーション: x座標を-32シフト済み (288-32=256, 736-32=704) -->
+    <linearGradient id="grad-flow" x1="256" y1="512" x2="704" y2="512" gradientUnits="userSpaceOnUse">
       <stop offset="0%"   stop-color="#FF0000"/>
       <stop offset="35%"  stop-color="#FF6666"/>
       <stop offset="100%" stop-color="#FFFFFF"/>
@@ -43,22 +43,22 @@
   <!-- Background rounded square -->
   <rect x="64" y="64" width="896" height="896" rx="200" fill="#111318"/>
 
-  <!-- Lines (左ノード表面から分岐点で合流、右ノード表面まで) -->
-  <g stroke-width="32" stroke-linecap="round" stroke-linejoin="round">
-    <!-- trunk: 左ノード表面(360) → 分岐点(512) -->
-    <path d="M360 512 L512 512"   stroke="url(#grad-flow)"/>
-    <!-- upper branch: 分岐点(512) → 右上ノード表面(681,367) -->
-    <path d="M512 512 L681 367"   stroke="url(#grad-flow)"/>
-    <!-- lower branch: 分岐点(512) → 右下ノード表面(681,657) -->
-    <path d="M512 512 L681 657"   stroke="url(#grad-flow)"/>
-  </g>
+  <!-- マーク全体を左に32px移動（視覚補正） -->
+  <g transform="translate(-32, 0)">
+    <!-- Lines -->
+    <g stroke-width="32" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M360 512 L512 512"   stroke="url(#grad-flow)"/>
+      <path d="M512 512 L681 367"   stroke="url(#grad-flow)"/>
+      <path d="M512 512 L681 657"   stroke="url(#grad-flow)"/>
+    </g>
 
-  <!-- 左ノード: YouTube赤・塗りつぶし -->
-  <circle cx="288" cy="512" r="72" fill="#FF0000"/>
+    <!-- 左ノード: YouTube赤・塗りつぶし -->
+    <circle cx="288" cy="512" r="72" fill="#FF0000"/>
 
-  <!-- 右2ノード: 白・中抜き -->
-  <g fill="none" stroke="#FFFFFF" stroke-width="32">
-    <circle cx="736" cy="320" r="72"/>
-    <circle cx="736" cy="704" r="72"/>
+    <!-- 右2ノード: 白・中抜き -->
+    <g fill="none" stroke="#FFFFFF" stroke-width="32">
+      <circle cx="736" cy="320" r="72"/>
+      <circle cx="736" cy="704" r="72"/>
+    </g>
   </g>
 </svg>
