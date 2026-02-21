@@ -430,15 +430,21 @@ fn syphon_loop(
 
         // テクスチャを黒でクリア
         gl::BindFramebuffer(gl::FRAMEBUFFER, fbo);
+        gl::Viewport(0, 0, actual_width as i32, actual_height as i32);
         gl::ClearColor(0.0, 0.0, 0.0, 1.0);
         gl::Clear(gl::COLOR_BUFFER_BIT);
+        gl::Flush();
 
         // 黒いフレームを複数回送信（TouchDesigner が確実に受信できるように）
-        for i in 0..5 {
+        for i in 0..10 {
+            // 毎回クリアして確実に黒にする
+            gl::BindFramebuffer(gl::FRAMEBUFFER, fbo);
+            gl::Clear(gl::COLOR_BUFFER_BIT);
+
             publish_syphon_frame(&syphon_server, texture, actual_width, actual_height);
             gl::Flush();
-            std::thread::sleep(Duration::from_millis(33)); // 約30fps
-            log::debug!("黒フレーム送信 {}/5", i + 1);
+            std::thread::sleep(Duration::from_millis(50)); // 少し長めに待つ
+            log::debug!("黒フレーム送信 {}/10", i + 1);
         }
 
         // GL 操作が完了するまで待機
@@ -446,7 +452,7 @@ fn syphon_loop(
 
         // クライアント側が黒フレームを受信・処理する時間を確保
         log::info!("黒いフレームの送信が完了しました (クライアント受信待機中...)");
-        std::thread::sleep(Duration::from_millis(200));
+        std::thread::sleep(Duration::from_millis(300));
 
         // 3. Syphon Server を停止して解放
         log::info!("Syphon Server を停止します");
