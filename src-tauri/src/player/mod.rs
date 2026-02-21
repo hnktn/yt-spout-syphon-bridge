@@ -69,7 +69,8 @@ impl PlayerState {
 
     pub async fn play(&self, url: &str, quality: Option<&str>) -> Result<()> {
         println!("=== play() called with URL: {} ===", url);
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.lock()
+            .map_err(|e| anyhow::anyhow!("Mutex ロック失敗: {}", e))?;
 
         // 既存のセッションをクリア（プレビューウィンドウと Syphon を停止）
         if let Some(prev) = inner.preview.take() {
@@ -119,7 +120,8 @@ impl PlayerState {
     }
 
     pub async fn stop(&self) -> Result<()> {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.lock()
+            .map_err(|e| anyhow::anyhow!("Mutex ロック失敗: {}", e))?;
         // プレビューウィンドウを停止
         if let Some(prev) = inner.preview.take() {
             prev.stop();
@@ -137,7 +139,8 @@ impl PlayerState {
     }
 
     pub async fn toggle_pause(&self) -> Result<bool> {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.lock()
+            .map_err(|e| anyhow::anyhow!("Mutex ロック失敗: {}", e))?;
         if let Some(mpv) = &inner.mpv {
             let paused: bool = mpv.toggle_pause()?;
             inner.status = if paused {
@@ -153,32 +156,55 @@ impl PlayerState {
     // ─── 状態の読み取り ───────────────────────────────────────────────────────
 
     pub fn status(&self) -> PlayStatus {
-        self.inner.lock().unwrap().status.clone()
+        self.inner.lock()
+            .map(|inner| inner.status.clone())
+            .unwrap_or(PlayStatus::Error("Mutex ロック失敗".to_string()))
     }
 
     pub fn current_url(&self) -> Option<String> {
-        self.inner.lock().unwrap().current_url.clone()
+        self.inner.lock()
+            .ok()
+            .and_then(|inner| inner.current_url.clone())
     }
 
     pub fn is_output_active(&self) -> bool {
-        self.inner.lock().unwrap().output_active
+        self.inner.lock()
+            .map(|inner| inner.output_active)
+            .unwrap_or(false)
     }
 
     // ─── オーディオ制御 ───────────────────────────────────────────────────────
 
     pub fn list_audio_devices(&self) -> Vec<(String, String)> {
-        let inner = self.inner.lock().unwrap();
+        let inner = match self.inner.lock() {
+            Ok(guard) => guard,
+            Err(e) => {
+                log::error!("Mutex ロック失敗: {}", e);
+                return audio::enumerate_devices();
+            }
+        };
         if let Some(mpv) = &inner.mpv {
-            let devices: Vec<(String, String)> = mpv.list_audio_devices().unwrap_or_default();
-            devices
+            log::info!("mpv からデバイス一覧を取得します");
+            match mpv.list_audio_devices() {
+                Ok(devices) => {
+                    log::info!("mpv から {} 個のデバイスを取得しました", devices.len());
+                    devices
+                }
+                Err(e) => {
+                    log::error!("mpv からのデバイス取得に失敗: {}", e);
+                    audio::enumerate_devices()
+                }
+            }
         } else {
+            log::info!("mpv が起動していないため、フォールバック関数を使用します");
             // mpv が起動していない場合でもリストを返す
             audio::enumerate_devices()
         }
     }
 
     pub async fn set_audio_device(&self, device_id: &str) -> Result<()> {
-        let inner = self.inner.lock().unwrap();
+        let inner = self.inner.lock()
+            .map_err(|e| anyhow::anyhow!("Mutex ロック失敗: {}", e))?;
         if let Some(mpv) = &inner.mpv {
             mpv.set_audio_device(device_id).map_err(|e| anyhow::anyhow!("{}", e))?;
         }
@@ -186,10 +212,85 @@ impl PlayerState {
     }
 
     pub async fn set_volume(&self, volume: u8) -> Result<()> {
-        let inner = self.inner.lock().unwrap();
+        let inner = self.inner.lock()
+            .map_err(|e| anyhow::anyhow!("Mutex ロック失敗: {}", e))?;
         if let Some(mpv) = &inner.mpv {
             mpv.set_volume(volume).map_err(|e| anyhow::anyhow!("{}", e))?;
         }
         Ok(())
+    }
+
+    // ─── プレイヤー制御の拡張機能 ─────────────────────────────────────────────
+
+    pub async fn set_loop(&self, enabled: bool) -> Result<()> {
+        let inner = self.inner.lock()
+            .map_err(|e| anyhow::anyhow!("Mutex ロック失敗: {}", e))?;
+        if let Some(mpv) = &inner.mpv {
+            mpv.set_loop(enabled).map_err(|e| anyhow::anyhow!("{}", e))?;
+        }
+        Ok(())
+    }
+
+    pub fn get_loop(&self) -> Result<bool> {
+        let inner = self.inner.lock()
+            .map_err(|e| anyhow::anyhow!("Mutex ロック失敗: {}", e))?;
+        if let Some(mpv) = &inner.mpv {
+            return mpv.get_loop().map_err(|e| anyhow::anyhow!("{}", e));
+        }
+        Ok(false)
+    }
+
+    pub async fn seek(&self, seconds: f64) -> Result<()> {
+        let inner = self.inner.lock()
+            .map_err(|e| anyhow::anyhow!("Mutex ロック失敗: {}", e))?;
+        if let Some(mpv) = &inner.mpv {
+            mpv.seek(seconds).map_err(|e| anyhow::anyhow!("{}", e))?;
+        }
+        Ok(())
+    }
+
+    pub fn get_time_pos(&self) -> Result<f64> {
+        let inner = self.inner.lock()
+            .map_err(|e| anyhow::anyhow!("Mutex ロック失敗: {}", e))?;
+        if let Some(mpv) = &inner.mpv {
+            return mpv.get_time_pos().map_err(|e| anyhow::anyhow!("{}", e));
+        }
+        Ok(0.0)
+    }
+
+    pub fn get_duration(&self) -> Result<f64> {
+        let inner = self.inner.lock()
+            .map_err(|e| anyhow::anyhow!("Mutex ロック失敗: {}", e))?;
+        if let Some(mpv) = &inner.mpv {
+            return mpv.get_duration().map_err(|e| anyhow::anyhow!("{}", e));
+        }
+        Ok(0.0)
+    }
+
+    pub async fn set_speed(&self, speed: f64) -> Result<()> {
+        let inner = self.inner.lock()
+            .map_err(|e| anyhow::anyhow!("Mutex ロック失敗: {}", e))?;
+        if let Some(mpv) = &inner.mpv {
+            mpv.set_speed(speed).map_err(|e| anyhow::anyhow!("{}", e))?;
+        }
+        Ok(())
+    }
+
+    pub fn get_speed(&self) -> Result<f64> {
+        let inner = self.inner.lock()
+            .map_err(|e| anyhow::anyhow!("Mutex ロック失敗: {}", e))?;
+        if let Some(mpv) = &inner.mpv {
+            return mpv.get_speed().map_err(|e| anyhow::anyhow!("{}", e));
+        }
+        Ok(1.0)
+    }
+
+    pub fn get_media_title(&self) -> Result<String> {
+        let inner = self.inner.lock()
+            .map_err(|e| anyhow::anyhow!("Mutex ロック失敗: {}", e))?;
+        if let Some(mpv) = &inner.mpv {
+            return mpv.get_media_title().map_err(|e| anyhow::anyhow!("{}", e));
+        }
+        Ok(String::new())
     }
 }

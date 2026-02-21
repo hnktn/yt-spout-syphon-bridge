@@ -27,6 +27,14 @@ pub fn run() {
             commands::get_audio_devices,
             commands::set_audio_device,
             commands::set_volume,
+            commands::set_loop,
+            commands::get_loop,
+            commands::seek,
+            commands::get_time_pos,
+            commands::get_duration,
+            commands::set_speed,
+            commands::get_speed,
+            commands::get_media_title,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

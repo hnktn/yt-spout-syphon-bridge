@@ -136,3 +136,53 @@ pub async fn set_volume(volume: u8, state: State<'_, PlayerState>) -> Result<(),
         .await
         .map_err(|e| e.to_string())
 }
+
+// ─── プレイヤー制御の拡張機能 ─────────────────────────────────────────────
+
+/// ループ再生を設定
+#[tauri::command]
+pub async fn set_loop(enabled: bool, state: State<'_, PlayerState>) -> Result<(), String> {
+    state.set_loop(enabled).await.map_err(|e| e.to_string())
+}
+
+/// ループ再生の状態を取得
+#[tauri::command]
+pub fn get_loop(state: State<'_, PlayerState>) -> Result<bool, String> {
+    state.get_loop().map_err(|e| e.to_string())
+}
+
+/// シーク（秒単位）
+#[tauri::command]
+pub async fn seek(seconds: f64, state: State<'_, PlayerState>) -> Result<(), String> {
+    state.seek(seconds).await.map_err(|e| e.to_string())
+}
+
+/// 再生位置を取得（秒）
+#[tauri::command]
+pub fn get_time_pos(state: State<'_, PlayerState>) -> Result<f64, String> {
+    state.get_time_pos().map_err(|e| e.to_string())
+}
+
+/// 総再生時間を取得（秒）
+#[tauri::command]
+pub fn get_duration(state: State<'_, PlayerState>) -> Result<f64, String> {
+    state.get_duration().map_err(|e| e.to_string())
+}
+
+/// 再生速度を設定（0.25 〜 4.0）
+#[tauri::command]
+pub async fn set_speed(speed: f64, state: State<'_, PlayerState>) -> Result<(), String> {
+    state.set_speed(speed).await.map_err(|e| e.to_string())
+}
+
+/// 再生速度を取得
+#[tauri::command]
+pub fn get_speed(state: State<'_, PlayerState>) -> Result<f64, String> {
+    state.get_speed().map_err(|e| e.to_string())
+}
+
+/// 動画タイトルを取得
+#[tauri::command]
+pub fn get_media_title(state: State<'_, PlayerState>) -> Result<String, String> {
+    state.get_media_title().map_err(|e| e.to_string())
+}
