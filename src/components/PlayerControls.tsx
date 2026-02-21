@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Pause, Play, Square, Repeat, ChevronLeft, ChevronRight } from "lucide-react";
+import { Pause, Square, Repeat, ChevronLeft, ChevronRight } from "lucide-react";
 
 interface PlayerControlsProps {
   isPlaying: boolean;
@@ -128,18 +128,16 @@ export default function PlayerControls({ isPlaying, onPause, onStop }: PlayerCon
     return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
   };
 
-  if (!isPlaying) return null;
-
   return (
     <div className="flex flex-col gap-2 p-2 bg-surface-1 border border-surface-border rounded-sm">
-      {/* 動画タイトル */}
-      {mediaTitle && (
+      {/* 動画タイトル（再生中のみ表示） */}
+      {isPlaying && mediaTitle && (
         <div className="text-xs text-text-primary truncate uppercase tracking-wide" title={mediaTitle}>
           {mediaTitle}
         </div>
       )}
 
-      {/* 再生時間表示とシークバー */}
+      {/* 再生時間表示とシークバー（再生中のみ有効） */}
       <div className="flex flex-col gap-1">
         <div className="flex justify-between text-xs text-text-muted font-mono">
           <span>{formatTime(timePos)}</span>
@@ -151,32 +149,34 @@ export default function PlayerControls({ isPlaying, onPause, onStop }: PlayerCon
           max={duration || 100}
           value={timePos}
           onChange={(e) => handleSeek(parseFloat(e.target.value))}
-          className="w-full h-px bg-surface-2 appearance-none cursor-pointer accent-accent"
-          disabled={!duration}
+          className="w-full h-1 bg-surface-3 appearance-none cursor-pointer accent-accent rounded-sm disabled:opacity-30 disabled:cursor-not-allowed"
+          disabled={!isPlaying || !duration}
         />
       </div>
 
       {/* コントロールボタン */}
       <div className="flex items-center justify-between gap-1.5 flex-wrap">
-        {/* 再生制御ボタン */}
+        {/* 再生制御ボタン（再生中のみ有効） */}
         <div className="flex gap-0.5">
           <button
             onClick={onPause}
-            className="w-6 h-6 flex items-center justify-center bg-surface-2 border border-surface-border-2 text-text-secondary rounded-sm hover:bg-surface-3 hover:border-surface-border-3 transition-colors"
+            disabled={!isPlaying}
+            className="w-6 h-6 flex items-center justify-center bg-surface-2 border border-surface-border-2 text-text-secondary rounded-sm hover:bg-surface-3 hover:border-surface-border-3 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
             title="一時停止 / 再開"
           >
             <Pause className="w-3 h-3" />
           </button>
           <button
             onClick={onStop}
-            className="w-6 h-6 flex items-center justify-center bg-surface-2 border border-surface-border-2 text-text-secondary rounded-sm hover:bg-surface-3 hover:border-surface-border-3 transition-colors"
+            disabled={!isPlaying}
+            className="w-6 h-6 flex items-center justify-center bg-surface-2 border border-surface-border-2 text-text-secondary rounded-sm hover:bg-surface-3 hover:border-surface-border-3 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
             title="停止"
           >
             <Square className="w-3 h-3" />
           </button>
         </div>
 
-        {/* ループトグル */}
+        {/* ループトグル（常に有効） */}
         <button
           onClick={handleLoopToggle}
           className={`flex items-center gap-1 px-1.5 py-0.5 text-xs rounded-sm border transition-colors ${
@@ -190,7 +190,7 @@ export default function PlayerControls({ isPlaying, onPause, onStop }: PlayerCon
           <span className="uppercase tracking-wide">{loop ? "ON" : "OFF"}</span>
         </button>
 
-        {/* 再生速度 */}
+        {/* 再生速度（常に有効） */}
         <div className="flex items-center gap-1">
           <label className="text-xs text-text-muted uppercase tracking-wide">SPD</label>
           <select
@@ -213,11 +213,12 @@ export default function PlayerControls({ isPlaying, onPause, onStop }: PlayerCon
           </select>
         </div>
 
-        {/* シークボタン */}
+        {/* シークボタン（再生中のみ有効） */}
         <div className="flex gap-0.5">
           <button
             onClick={() => handleSeek(Math.max(0, timePos - 10))}
-            className="flex items-center gap-0.5 px-1 py-0.5 text-xs bg-surface-2 border border-surface-border-2 text-text-muted rounded-sm hover:bg-surface-3 hover:border-surface-border-3 transition-colors font-mono"
+            disabled={!isPlaying}
+            className="flex items-center gap-0.5 px-1 py-0.5 text-xs bg-surface-2 border border-surface-border-2 text-text-muted rounded-sm hover:bg-surface-3 hover:border-surface-border-3 transition-colors font-mono disabled:opacity-30 disabled:cursor-not-allowed"
             title="10秒戻る"
           >
             <ChevronLeft className="w-2.5 h-2.5" />
@@ -225,7 +226,8 @@ export default function PlayerControls({ isPlaying, onPause, onStop }: PlayerCon
           </button>
           <button
             onClick={() => handleSeek(timePos + 10)}
-            className="flex items-center gap-0.5 px-1 py-0.5 text-xs bg-surface-2 border border-surface-border-2 text-text-muted rounded-sm hover:bg-surface-3 hover:border-surface-border-3 transition-colors font-mono"
+            disabled={!isPlaying}
+            className="flex items-center gap-0.5 px-1 py-0.5 text-xs bg-surface-2 border border-surface-border-2 text-text-muted rounded-sm hover:bg-surface-3 hover:border-surface-border-3 transition-colors font-mono disabled:opacity-30 disabled:cursor-not-allowed"
             title="10秒進む"
           >
             <span>10</span>
