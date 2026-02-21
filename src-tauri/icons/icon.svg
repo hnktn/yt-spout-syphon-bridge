@@ -2,31 +2,41 @@
 <!--
   座標設計:
   中心: (512, 512)
-  左ノード: (288, 512)  ← 中心から -224px
-  分岐点:   (512, 512)  ← 中心
-  右上ノード: (736, 320) ← 分岐点から (+224, -192)
-  右下ノード: (736, 704) ← 分岐点から (+224, +192)
+  左ノード:   (288, 512)  r=72
+  分岐点:     (512, 512)
+  右上ノード: (736, 320)  r=72
+  右下ノード: (736, 704)  r=72
 
-  右2ノードは中心Y=512から ±192px で完全対称
-  幹の長さ: 224px (288→512)
-  枝の長さ: sqrt(224²+192²) = sqrt(50176+36864) = sqrt(87040) ≈ 295px
+  枝の方向ベクトル: (224, ±192), 長さ = sqrt(224²+192²) ≈ 295.025
+  単位ベクトル: (224/295.025, ±192/295.025) ≈ (0.7593, ±0.6508)
+
+  線の終点は各ノード中心から r=72px 手前で止める:
+  幹（水平）:
+    左端: 288+72 = 360
+    右端: 512-72 = 440
+  右上枝:
+    分岐点側: (512+72×0.7593, 512-72×0.6508) ≈ (567, 465)
+    右上端:   (736-72×0.7593, 320+72×0.6508) ≈ (681, 367)
+  右下枝（上下対称）:
+    分岐点側: (567, 559)
+    右下端:   (681, 657)
 -->
 <svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
   <!-- Background rounded square -->
   <rect x="64" y="64" width="896" height="896" rx="200" fill="#111318"/>
 
-  <!-- Bridge / split mark -->
-  <g stroke="#FFFFFF" stroke-width="48" stroke-linecap="round" stroke-linejoin="round">
-    <!-- trunk: left node → junction (horizontal, Y=512) -->
-    <path d="M288 512 L512 512"/>
-    <!-- upper branch: junction → upper-right node -->
-    <path d="M512 512 L736 320"/>
-    <!-- lower branch: junction → lower-right node -->
-    <path d="M512 512 L736 704"/>
+  <!-- Bridge / split mark (線はノード円の外側で止まる) -->
+  <g stroke="#FFFFFF" stroke-width="32" stroke-linecap="round" stroke-linejoin="round">
+    <!-- trunk: 左ノード表面 → 分岐点表面 -->
+    <path d="M360 512 L440 512"/>
+    <!-- upper branch: 分岐点表面 → 右上ノード表面 -->
+    <path d="M567 465 L681 367"/>
+    <!-- lower branch: 分岐点表面 → 右下ノード表面 -->
+    <path d="M567 559 L681 657"/>
   </g>
 
   <!-- Nodes (塗りなし・枠線のみ) -->
-  <g fill="none" stroke="#FFFFFF" stroke-width="48">
+  <g fill="none" stroke="#FFFFFF" stroke-width="32">
     <circle cx="288" cy="512" r="72"/>
     <circle cx="736" cy="320" r="72"/>
     <circle cx="736" cy="704" r="72"/>
