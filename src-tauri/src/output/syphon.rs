@@ -360,11 +360,31 @@ fn syphon_loop(
     println!("Starting Syphon rendering loop...");
     log::info!("Syphon レンダリング開始: {} ({}x{})", server_name, actual_width, actual_height);
 
+    // プレビュー用 FBO・テクスチャをループ外で1回だけ作成して再利用する
+    let preview_width = 320u32;
+    let (mut preview_fbo, mut preview_texture) = (0u32, 0u32);
+    unsafe {
+        CGLSetCurrentContext(gl_ctx);
+        gl::GenFramebuffers(1, &mut preview_fbo);
+        gl::GenTextures(1, &mut preview_texture);
+        gl::BindTexture(gl::TEXTURE_2D, preview_texture);
+        // アスペクト比は動画解像度確定後に合わせるため、ひとまず 320x180 で初期化
+        let preview_height = ((actual_height as f32 / actual_width as f32) * preview_width as f32).max(1.0) as u32;
+        gl::TexImage2D(
+            gl::TEXTURE_2D, 0, gl::RGB as _, preview_width as _, preview_height as _,
+            0, gl::RGB, gl::UNSIGNED_BYTE, std::ptr::null(),
+        );
+        gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::LINEAR as _);
+        gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::LINEAR as _);
+        gl::BindFramebuffer(gl::FRAMEBUFFER, preview_fbo);
+        gl::FramebufferTexture2D(gl::FRAMEBUFFER, gl::COLOR_ATTACHMENT0, gl::TEXTURE_2D, preview_texture, 0);
+        gl::BindFramebuffer(gl::FRAMEBUFFER, 0);
+    }
+
     // レンダリングループ
     let mut consecutive_errors = 0;
     let max_consecutive_errors = 30; // 約0.5秒分のエラーで停止
     let mut frame_count = 0u64;
-    let preview_interval = 2; // 2フレームに1回プレビューを送信 (約30fps、パフォーマンス優先)
 
     loop {
         // 停止コマンドが届いたら終了
@@ -392,11 +412,9 @@ fn syphon_loop(
 
                     frame_count += 1;
 
-                    // プレビューを送信
-                    if frame_count % preview_interval == 0 {
-                        if let Some(ref app) = app_handle {
-                            send_preview_frame_blit(app, fbo, actual_width, actual_height);
-                        }
+                    // プレビューを送信（毎フレーム、再利用 FBO を使う）
+                    if let Some(ref app) = app_handle {
+                        send_preview_frame_blit(app, fbo, actual_width, actual_height, preview_fbo, preview_texture);
                     }
                 }
                 Err(e) => {
@@ -475,6 +493,9 @@ fn syphon_loop(
         log::info!("GL リソースを削除します");
         gl::DeleteFramebuffers(1, &fbo);
         gl::DeleteTextures(1, &texture);
+        // プレビュー用リソースも解放
+        gl::DeleteFramebuffers(1, &preview_fbo);
+        gl::DeleteTextures(1, &preview_texture);
 
         // 6. GL コンテキストを破棄
         // 注意: mpv インスタンスは MpvContext が管理しているので、ここでは破棄しない
@@ -670,60 +691,33 @@ unsafe impl Encode for NSRect {
 }
 
 /// プレビューフレームを WebView に送信（glBlitFramebuffer で GPU リサイズ）
-unsafe fn send_preview_frame_blit(app: &tauri::AppHandle, src_fbo: gl::types::GLuint, width: u32, height: u32) {
-    // プレビューサイズ（動画のアスペクト比を維持）
+/// preview_fbo / preview_texture はループ外で確保済みのものを再利用する
+unsafe fn send_preview_frame_blit(
+    app: &tauri::AppHandle,
+    src_fbo: gl::types::GLuint,
+    width: u32,
+    height: u32,
+    preview_fbo: gl::types::GLuint,
+    preview_texture: gl::types::GLuint,
+) {
     let preview_width = 320u32;
     let preview_height = ((height as f32 / width as f32) * preview_width as f32).max(1.0) as u32;
 
-    // 縮小用の一時的な FBO とテクスチャを作成
-    let mut preview_fbo: gl::types::GLuint = 0;
-    let mut preview_texture: gl::types::GLuint = 0;
-
-    gl::GenFramebuffers(1, &mut preview_fbo);
-    gl::GenTextures(1, &mut preview_texture);
-
-    // プレビュー用テクスチャを作成
-    gl::BindTexture(gl::TEXTURE_2D, preview_texture);
-    gl::TexImage2D(
-        gl::TEXTURE_2D,
-        0,
-        gl::RGB as _,
-        preview_width as _,
-        preview_height as _,
-        0,
-        gl::RGB,
-        gl::UNSIGNED_BYTE,
-        std::ptr::null(),
-    );
-    gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::LINEAR as _);
-    gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::LINEAR as _);
-
-    // FBO にテクスチャをアタッチ
-    gl::BindFramebuffer(gl::FRAMEBUFFER, preview_fbo);
-    gl::FramebufferTexture2D(
-        gl::FRAMEBUFFER,
-        gl::COLOR_ATTACHMENT0,
-        gl::TEXTURE_2D,
-        preview_texture,
-        0,
-    );
-
-    // glBlitFramebuffer で GPU 上でリサイズコピー
+    // glBlitFramebuffer で GPU 上でリサイズコピー（FBO・テクスチャは再利用）
     gl::BindFramebuffer(gl::READ_FRAMEBUFFER, src_fbo);
     gl::BindFramebuffer(gl::DRAW_FRAMEBUFFER, preview_fbo);
     gl::BlitFramebuffer(
-        0, 0, width as _, height as _,           // ソース領域
-        0, 0, preview_width as _, preview_height as _, // 宛先領域
+        0, 0, width as _, height as _,
+        0, 0, preview_width as _, preview_height as _,
         gl::COLOR_BUFFER_BIT,
-        gl::LINEAR, // リニア補間
+        gl::LINEAR,
     );
 
     // 縮小したピクセルデータを読み取る
     gl::BindFramebuffer(gl::FRAMEBUFFER, preview_fbo);
     let mut pixels = vec![0u8; (preview_width * preview_height * 3) as usize];
     gl::ReadPixels(
-        0,
-        0,
+        0, 0,
         preview_width as i32,
         preview_height as i32,
         gl::RGB,
@@ -735,14 +729,8 @@ unsafe fn send_preview_frame_blit(app: &tauri::AppHandle, src_fbo: gl::types::GL
     let gl_error = gl::GetError();
     if gl_error != gl::NO_ERROR {
         log::warn!("プレビューフレーム読み取り時の GL エラー: 0x{:X}", gl_error);
-        gl::DeleteFramebuffers(1, &preview_fbo);
-        gl::DeleteTextures(1, &preview_texture);
         return;
     }
-
-    // 一時リソースをクリーンアップ
-    gl::DeleteFramebuffers(1, &preview_fbo);
-    gl::DeleteTextures(1, &preview_texture);
 
     // base64 エンコード
     use base64::Engine;
