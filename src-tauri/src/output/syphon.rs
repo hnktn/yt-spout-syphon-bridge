@@ -278,94 +278,79 @@ fn syphon_loop(
         }
     }
 
-    // 動画の実際の解像度を取得するまで待機
-    // VIDEO_RECONFIG イベント (id=11) が落ち着くまで待ち、最終的な dwidth/dheight を使用する。
-    // bestvideo+bestaudio では VIDEO_RECONFIG が複数回発生するため、
-    // 最後のイベント後に一定時間 (settle_ms) 新しいイベントが来なければ確定とみなす。
-    println!("Waiting for video resolution...");
-    log::info!("動画の解像度情報を取得中...");
-    let (actual_width, actual_height) = unsafe {
-        let mut width = initial_width as i64;
-        let mut height = initial_height as i64;
-        let mut attempts = 0;
-        let max_attempts = 150; // 最大15秒待つ（100ms x 150）
-
-        // MPV_EVENT_VIDEO_RECONFIG = 11
-        const MPV_EVENT_VIDEO_RECONFIG: u32 = 11;
-        // MPV_FORMAT_INT64 = 4
+    // observe_property で width/height の変更通知を登録する
+    // （video-params/w は vo=libmpv では取れないが、watch 経由なら取れる可能性がある）
+    unsafe {
         const MPV_FORMAT_INT64: u32 = 4;
+        let width_cstr  = std::ffi::CString::new("width").unwrap();
+        let height_cstr = std::ffi::CString::new("height").unwrap();
+        libmpv2_sys::mpv_observe_property(mpv_handle, 1, width_cstr.as_ptr(), MPV_FORMAT_INT64);
+        libmpv2_sys::mpv_observe_property(mpv_handle, 2, height_cstr.as_ptr(), MPV_FORMAT_INT64);
+        println!("Registered observe_property for width/height");
+    }
 
-        // 最後に VIDEO_RECONFIG を受け取ってから何 tick 待つか（100ms x 5 = 500ms）
-        let settle_ticks = 5usize;
-        let mut ticks_since_last_reconfig: Option<usize> = None;
+    // PROPERTY_CHANGE (id=22) または VIDEO_RECONFIG (id=17) が来るまで待つ
+    // observe_property で幅・高さを監視し、解像度が確定したら FBO を作成する。
+    // タイムアウト時は initial_width/height にフォールバック。
+    println!("Waiting for resolution via observe_property...");
+    let (mut observed_width, mut observed_height) = (0i64, 0i64);
+    unsafe {
+        // 正しいイベント ID（libmpv2-sys bindings から確認済み）
+        // MPV_EVENT_IDLE=11, MPV_EVENT_START_FILE=6, MPV_EVENT_VIDEO_RECONFIG=17, MPV_EVENT_PROPERTY_CHANGE=22
+        use libmpv2_sys::{
+            mpv_event_id_MPV_EVENT_VIDEO_RECONFIG as EV_VIDEO_RECONFIG,
+            mpv_event_id_MPV_EVENT_PROPERTY_CHANGE as EV_PROPERTY_CHANGE,
+            mpv_format_MPV_FORMAT_INT64 as FMT_INT64,
+        };
 
+        let mut total_attempts = 0;
         loop {
-            // mpv イベントをすべてドレイン
-            loop {
-                let event = libmpv2_sys::mpv_wait_event(mpv_handle, 0.0);
-                if event.is_null() { break; }
+            let event = libmpv2_sys::mpv_wait_event(mpv_handle, 0.1); // 100ms ブロッキング
+            if !event.is_null() {
                 let event_id = (*event).event_id;
-                if event_id == 0 { break; } // MPV_EVENT_NONE
+                if event_id != 0 {
+                    println!("pre-render event: id={}", event_id);
+                }
 
-                println!("mpv event: id={}", event_id);
-
-                if event_id == MPV_EVENT_VIDEO_RECONFIG {
-                    println!("VIDEO_RECONFIG event received, trying to get resolution...");
-
-                    let dwidth_cstr = std::ffi::CString::new("dwidth").unwrap();
-                    let dheight_cstr = std::ffi::CString::new("dheight").unwrap();
-                    let mut w = 0i64;
-                    let mut h = 0i64;
-
-                    let ret_w = libmpv2_sys::mpv_get_property(
-                        mpv_handle, dwidth_cstr.as_ptr(), MPV_FORMAT_INT64,
-                        &mut w as *mut i64 as *mut _,
-                    );
-                    let ret_h = libmpv2_sys::mpv_get_property(
-                        mpv_handle, dheight_cstr.as_ptr(), MPV_FORMAT_INT64,
-                        &mut h as *mut i64 as *mut _,
-                    );
-
-                    println!("Resolution query: ret_w={}, ret_h={}, w={}, h={}", ret_w, ret_h, w, h);
-
-                    if ret_w >= 0 && ret_h >= 0 && w > 0 && h > 0 {
-                        width = w;
-                        height = h;
-                        println!("Candidate resolution: {}x{} (waiting for settle...)", width, height);
-                        log::info!("解像度候補: {}x{} (確定待ち...)", width, height);
-                        ticks_since_last_reconfig = Some(0); // タイマーリセット
-                    } else {
-                        // dwidth が未確定（-10 等）の場合もタイマーをリセットして次を待つ
-                        println!("Resolution not yet available (ret_w={}), waiting...", ret_w);
-                        ticks_since_last_reconfig = Some(0);
+                if event_id == EV_PROPERTY_CHANGE {
+                    // mpv_event_property 構造体を解析
+                    let data_ptr = (*event).data as *mut libmpv2_sys::mpv_event_property;
+                    if !data_ptr.is_null() {
+                        let prop = &*data_ptr;
+                        if !prop.name.is_null() {
+                            let name = std::ffi::CStr::from_ptr(prop.name).to_string_lossy();
+                            if prop.format == FMT_INT64 && !prop.data.is_null() {
+                                let val = *(prop.data as *const i64);
+                                println!("PROPERTY_CHANGE: {}={}", name, val);
+                                if name == "width" && val > 0 { observed_width = val; }
+                                if name == "height" && val > 0 { observed_height = val; }
+                            } else {
+                                println!("PROPERTY_CHANGE: {} format={} (not INT64)", name, prop.format);
+                            }
+                        }
                     }
                 }
-            }
 
-            // settle タイマーが動いていれば進める
-            if let Some(ref mut ticks) = ticks_since_last_reconfig {
-                *ticks += 1;
-                if *ticks >= settle_ticks && width > 0 && height > 0 {
-                    println!("Resolution settled: {}x{}", width, height);
-                    log::info!("動画の実際の解像度（確定）: {}x{}", width, height);
+                if event_id == EV_VIDEO_RECONFIG {
+                    println!("Got VIDEO_RECONFIG (id=17)");
+                }
+
+                // 幅・高さが両方揃ったら開始
+                if observed_width > 0 && observed_height > 0 {
+                    println!("Resolution confirmed via observe_property: {}x{}", observed_width, observed_height);
                     break;
                 }
             }
 
-            attempts += 1;
-            if attempts >= max_attempts {
-                println!("Resolution timeout, using: {}x{}", width, height);
-                log::warn!("解像度取得タイムアウト、現在の値を使用: {}x{}", width, height);
+            total_attempts += 1;
+            if total_attempts >= 300 { // 最大30秒
+                println!("Timeout waiting for resolution, using fallback {}x{}", initial_width, initial_height);
                 break;
             }
-
-            std::thread::sleep(Duration::from_millis(100));
         }
+    }
 
-        (width as u32, height as u32)
-    };
-
-    // 解像度が確定したら playing 状態を通知
+    // playing 状態を通知（最初のフレーム描画前に通知して UI をアンブロック）
     if let Some(app) = &app_handle {
         #[derive(Clone, serde::Serialize)]
         struct PlayingEvent { status: String, syphon_active: bool }
@@ -373,22 +358,28 @@ fn syphon_loop(
             status: "playing".to_string(),
             syphon_active: true,
         });
-        log::info!("player-status イベントを送信しました (playing) 解像度={}x{}", actual_width, actual_height);
     }
     is_playing.store(true, std::sync::atomic::Ordering::SeqCst);
 
-    // FBO とテクスチャを実際の解像度で作成
-    println!("Creating FBO with resolution: {}x{}", actual_width, actual_height);
-    let (fbo, texture) = create_fbo(actual_width, actual_height);
+    // 初期 FBO（observe_property で取得できた場合はその解像度を使用、なければ initial_width/height）
+    let mut current_width = if observed_width > 0 { observed_width as u32 } else { initial_width };
+    let mut current_height = if observed_height > 0 { observed_height as u32 } else { initial_height };
+    if observed_width > 0 {
+        println!("Using observed resolution: {}x{}", current_width, current_height);
+    } else {
+        println!("Using fallback resolution: {}x{}", current_width, current_height);
+    }
+    println!("Creating initial FBO with resolution: {}x{}", current_width, current_height);
+    let (mut fbo, mut texture) = create_fbo(current_width, current_height);
     println!("FBO created: fbo={}, texture={}", fbo, texture);
 
-    // Syphon Server を実解像度で作成
-    println!("Creating Syphon server with resolution: {}x{}", actual_width, actual_height);
+    // Syphon Server を作成
+    println!("Creating Syphon server...");
     let syphon_server = create_syphon_server(server_name, gl_ctx)?;
     println!("Syphon server created");
 
     println!("Starting Syphon rendering loop...");
-    log::info!("Syphon レンダリング開始: {} ({}x{})", server_name, actual_width, actual_height);
+    log::info!("Syphon レンダリング開始: {} (初期解像度: {}x{})", server_name, current_width, current_height);
 
     // プレビュー用 FBO・テクスチャをループ外で1回だけ作成して再利用する
     let preview_width = 320u32;
@@ -398,8 +389,7 @@ fn syphon_loop(
         gl::GenFramebuffers(1, &mut preview_fbo);
         gl::GenTextures(1, &mut preview_texture);
         gl::BindTexture(gl::TEXTURE_2D, preview_texture);
-        // アスペクト比は動画解像度確定後に合わせるため、ひとまず 320x180 で初期化
-        let preview_height = ((actual_height as f32 / actual_width as f32) * preview_width as f32).max(1.0) as u32;
+        let preview_height = ((current_height as f32 / current_width as f32) * preview_width as f32).max(1.0) as u32;
         gl::TexImage2D(
             gl::TEXTURE_2D, 0, gl::RGB as _, preview_width as _, preview_height as _,
             0, gl::RGB, gl::UNSIGNED_BYTE, std::ptr::null(),
@@ -416,6 +406,15 @@ fn syphon_loop(
     let max_consecutive_errors = 30; // 約0.5秒分のエラーで停止
     let mut frame_count = 0u64;
 
+    // レンダリングループ内の PROPERTY_CHANGE 検知（解像度変更対応）
+    use libmpv2_sys::{
+        mpv_event_id_MPV_EVENT_VIDEO_RECONFIG as EV_VIDEO_RECONFIG,
+        mpv_event_id_MPV_EVENT_PROPERTY_CHANGE as EV_PROPERTY_CHANGE,
+        mpv_format_MPV_FORMAT_INT64 as FMT_INT64,
+    };
+    let mut prop_width = current_width as i64;
+    let mut prop_height = current_height as i64;
+
     loop {
         // 停止コマンドが届いたら終了
         if let Ok(SyphonCommand::Stop) = cmd_rx.try_recv() {
@@ -423,28 +422,79 @@ fn syphon_loop(
             break;
         }
 
+        // mpv イベントをドレインして PROPERTY_CHANGE / VIDEO_RECONFIG を検知
+        unsafe {
+            loop {
+                let event = libmpv2_sys::mpv_wait_event(mpv_handle, 0.0);
+                if event.is_null() { break; }
+                let event_id = (*event).event_id;
+                if event_id == 0 { break; } // MPV_EVENT_NONE
+
+                if event_id == EV_PROPERTY_CHANGE {
+                    let data_ptr = (*event).data as *mut libmpv2_sys::mpv_event_property;
+                    if !data_ptr.is_null() {
+                        let prop = &*data_ptr;
+                        if !prop.name.is_null() && prop.format == FMT_INT64 && !prop.data.is_null() {
+                            let name = std::ffi::CStr::from_ptr(prop.name).to_string_lossy();
+                            let val = *(prop.data as *const i64);
+                            if name == "width" && val > 0 {
+                                println!("render loop PROPERTY_CHANGE: width={}", val);
+                                prop_width = val;
+                            }
+                            if name == "height" && val > 0 {
+                                println!("render loop PROPERTY_CHANGE: height={}", val);
+                                prop_height = val;
+                            }
+                        }
+                    }
+                }
+
+                if event_id == EV_VIDEO_RECONFIG {
+                    println!("render loop VIDEO_RECONFIG (id=17)");
+                }
+            }
+
+            // 解像度が変わっていれば FBO を再作成
+            if prop_width > 0 && prop_height > 0
+                && (prop_width as u32 != current_width || prop_height as u32 != current_height)
+            {
+                println!("Resolution changed: {}x{} -> {}x{}", current_width, current_height, prop_width, prop_height);
+                log::info!("解像度変更を検知: {}x{} → {}x{}", current_width, current_height, prop_width, prop_height);
+
+                gl::DeleteFramebuffers(1, &fbo);
+                gl::DeleteTextures(1, &texture);
+                current_width = prop_width as u32;
+                current_height = prop_height as u32;
+                let (new_fbo, new_tex) = create_fbo(current_width, current_height);
+                fbo = new_fbo;
+                texture = new_tex;
+                println!("FBO recreated: {}x{}", current_width, current_height);
+                log::info!("FBO を再作成: {}x{}", current_width, current_height);
+            }
+        }
+
         unsafe {
             CGLSetCurrentContext(gl_ctx);
 
             // mpv に FBO へ描画させる
-            match render_ctx.render::<()>(fbo as i32, actual_width as i32, actual_height as i32, true) {
+            match render_ctx.render::<()>(fbo as i32, current_width as i32, current_height as i32, true) {
                 Ok(_) => {
                     consecutive_errors = 0;
 
                     // 最初のフレームでログ出力
                     if frame_count == 0 {
-                        println!("First frame rendered successfully!");
-                        log::info!("最初のフレームを描画しました");
+                        println!("First frame rendered successfully! size={}x{}", current_width, current_height);
+                        log::info!("最初のフレームを描画しました: {}x{}", current_width, current_height);
                     }
 
                     // Syphon にテクスチャを公開
-                    publish_syphon_frame(&syphon_server, texture, actual_width, actual_height);
+                    publish_syphon_frame(&syphon_server, texture, current_width, current_height);
 
                     frame_count += 1;
 
                     // プレビューを送信（毎フレーム、再利用 FBO を使う）
                     if let Some(ref app) = app_handle {
-                        send_preview_frame_blit(app, fbo, actual_width, actual_height, preview_fbo, preview_texture);
+                        send_preview_frame_blit(app, fbo, current_width, current_height, preview_fbo, preview_texture);
                     }
                 }
                 Err(e) => {
@@ -478,7 +528,7 @@ fn syphon_loop(
 
         // テクスチャを黒でクリア
         gl::BindFramebuffer(gl::FRAMEBUFFER, fbo);
-        gl::Viewport(0, 0, actual_width as i32, actual_height as i32);
+        gl::Viewport(0, 0, current_width as i32, current_height as i32);
         gl::ClearColor(0.0, 0.0, 0.0, 1.0);
         gl::Clear(gl::COLOR_BUFFER_BIT);
         gl::Flush();
@@ -489,7 +539,7 @@ fn syphon_loop(
             gl::BindFramebuffer(gl::FRAMEBUFFER, fbo);
             gl::Clear(gl::COLOR_BUFFER_BIT);
 
-            publish_syphon_frame(&syphon_server, texture, actual_width, actual_height);
+            publish_syphon_frame(&syphon_server, texture, current_width, current_height);
             gl::Flush();
             std::thread::sleep(Duration::from_millis(50)); // 少し長めに待つ
             log::debug!("黒フレーム送信 {}/10", i + 1);
