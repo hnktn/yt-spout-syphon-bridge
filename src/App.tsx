@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { usePlayer } from "./hooks/usePlayer";
 import UrlInput from "./components/UrlInput";
-import TransportControls from "./components/TransportControls";
 import AudioDeviceSelector from "./components/AudioDeviceSelector";
 import PreviewCanvas from "./components/PreviewCanvas";
+import PlayerControls from "./components/PlayerControls";
 
 export default function App() {
   const { status, play, stop, pause, setAudioDevice, setVolume } = usePlayer();
@@ -18,27 +18,26 @@ export default function App() {
   const isActive = status.status === "playing" || status.status === "paused" || status.status === "loading";
 
   return (
-    <div className="min-h-screen bg-[#1a1a1a] text-white flex flex-col">
-      <div className="flex-1 flex flex-col gap-4 p-4">
+    <div className="min-h-screen bg-[#1a1a1a] text-white flex flex-col overflow-auto">
+      <div className="flex-1 flex flex-col gap-3 p-3">
         {/* URL 入力 */}
         <UrlInput
           url={url}
           onChange={setUrl}
           onSubmit={handlePlay}
-          disabled={status.status === "loading"}
-        />
-
-        {/* 再生コントロール */}
-        <TransportControls
-          status={status}
-          onPlay={handlePlay}
-          onStop={stop}
-          onPause={pause}
-          disabled={!url.trim() && !isActive}
+          disabled={false}
+          isLoading={status.status === "loading"}
         />
 
         {/* プレビュー */}
         <PreviewCanvas />
+
+        {/* プレイヤーコントロール */}
+        <PlayerControls
+          isPlaying={status.status === "playing" || status.status === "paused"}
+          onPause={pause}
+          onStop={stop}
+        />
 
         {/* ステータス表示 */}
         <StatusBadge status={status} />
