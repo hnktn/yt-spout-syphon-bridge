@@ -46,6 +46,7 @@ fn main() -> Result<()> {
         width,
         height,
         None, // プレビュー無効
+        std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
     )?;
 
     log::info!("Syphon スレッドが起動しました");

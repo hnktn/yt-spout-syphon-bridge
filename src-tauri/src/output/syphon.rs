@@ -72,12 +72,33 @@ const RTLD_LOCAL: i32 = 0x4;
 /// DYLD_FRAMEWORK_PATH だけでは不十分。
 fn load_syphon_framework() -> Result<()> {
     unsafe {
-        // framework パスを環境変数またはハードコードから取得
-        let framework_paths = [
-            "/Users/haruhisa/Library/CloudStorage/Dropbox/Repos/yt-spout-syphon-bridge/src-tauri/bindings/syphon/Syphon.framework/Syphon\0",
+        // .app バンドル内の Frameworks ディレクトリを最優先で試す
+        let mut dynamic_paths: Vec<String> = Vec::new();
+
+        // 実行ファイルのパスから .app バンドル内 Frameworks を解決
+        if let Ok(exe) = std::env::current_exe() {
+            // 例: /Applications/xxx.app/Contents/MacOS/xxx
+            // -> /Applications/xxx.app/Contents/Frameworks/Syphon.framework/Syphon
+            if let Some(macos_dir) = exe.parent() {
+                if let Some(contents_dir) = macos_dir.parent() {
+                    let fw_path = contents_dir
+                        .join("Frameworks/Syphon.framework/Syphon");
+                    dynamic_paths.push(format!("{}\0", fw_path.to_string_lossy()));
+                }
+            }
+        }
+
+        // 開発時のパスをフォールバックとして追加
+        let static_paths = [
             "./bindings/syphon/Syphon.framework/Syphon\0",
             "bindings/syphon/Syphon.framework/Syphon\0",
         ];
+
+        let framework_paths: Vec<&str> = dynamic_paths
+            .iter()
+            .map(|s| s.as_str())
+            .chain(static_paths.iter().copied())
+            .collect();
 
         for path in &framework_paths {
             log::info!("Syphon.framework をロード中: {}", path.trim_end_matches('\0'));
@@ -151,6 +172,7 @@ pub fn spawn(
     width: u32,
     height: u32,
     app_handle: Option<tauri::AppHandle>,
+    is_playing: std::sync::Arc<std::sync::atomic::AtomicBool>,
 ) -> Result<SyphonHandle> {
     let (cmd_tx, cmd_rx) = mpsc::channel::<SyphonCommand>();
     let sendable = SendableMpvHandle(mpv_handle);
@@ -159,7 +181,7 @@ pub fn spawn(
 
     let thread_handle = std::thread::spawn(move || {
         println!("=== Syphon thread started ===");
-        if let Err(e) = syphon_loop(sendable, &server_name, &url, cmd_rx, width, height, app_handle) {
+        if let Err(e) = syphon_loop(sendable, &server_name, &url, cmd_rx, width, height, app_handle, is_playing) {
             println!("!!! Syphon レンダリングループでエラー: {}", e);
             log::error!("Syphon レンダリングループでエラー: {}", e);
         }
@@ -183,6 +205,7 @@ fn syphon_loop(
     initial_width: u32,
     initial_height: u32,
     app_handle: Option<tauri::AppHandle>,  // プレビュー機能用
+    is_playing: std::sync::Arc<std::sync::atomic::AtomicBool>,
 ) -> Result<()> {
     println!("=== syphon_loop started: {} ===", url);
 
@@ -256,88 +279,68 @@ fn syphon_loop(
     }
 
     // 動画の実際の解像度を取得するまで待機
-    // VIDEO_RECONFIG イベント (id=11) を待ってから解像度を取得する
+    // VIDEO_RECONFIG イベント (id=11) か タイムアウト(10秒) まで待つ
     println!("Waiting for video resolution...");
     log::info!("動画の解像度情報を取得中...");
     let (actual_width, actual_height) = unsafe {
-        let mut width = 0i64;
-        let mut height = 0i64;
+        let mut width = initial_width as i64;
+        let mut height = initial_height as i64;
         let mut attempts = 0;
-        let max_attempts = 300; // 最大30秒待つ（100ms x 300）
-        let mut video_reconfig_received = false;
+        let max_attempts = 100; // 最大10秒待つ（100ms x 100）
 
         // MPV_EVENT_VIDEO_RECONFIG = 11
         const MPV_EVENT_VIDEO_RECONFIG: u32 = 11;
+        // MPV_FORMAT_INT64 = 4
+        const MPV_FORMAT_INT64: u32 = 4;
 
-        loop {
+        'outer: loop {
             // mpv イベントをチェック（ブロッキングなし）
-            let event = libmpv2_sys::mpv_wait_event(mpv_handle, 0.0);
-            if !event.is_null() {
+            loop {
+                let event = libmpv2_sys::mpv_wait_event(mpv_handle, 0.0);
+                if event.is_null() { break; }
                 let event_id = (*event).event_id;
-                if event_id != 0 { // MPV_EVENT_NONE 以外
-                    if attempts % 10 == 0 || event_id == MPV_EVENT_VIDEO_RECONFIG {
-                        println!("mpv event: id={}", event_id);
-                        log::debug!("mpv event: id={}", event_id);
+                if event_id == 0 { break; } // MPV_EVENT_NONE
+
+                println!("mpv event: id={}", event_id);
+
+                if event_id == MPV_EVENT_VIDEO_RECONFIG {
+                    println!("VIDEO_RECONFIG event received, trying to get resolution...");
+                    // 少し待ってから取得（mpv 内部が確定するまでの猶予）
+                    std::thread::sleep(Duration::from_millis(300));
+
+                    let dwidth_cstr = std::ffi::CString::new("width").unwrap();
+                    let dheight_cstr = std::ffi::CString::new("height").unwrap();
+                    let mut w = 0i64;
+                    let mut h = 0i64;
+
+                    let ret_w = libmpv2_sys::mpv_get_property(
+                        mpv_handle, dwidth_cstr.as_ptr(), MPV_FORMAT_INT64,
+                        &mut w as *mut i64 as *mut _,
+                    );
+                    let ret_h = libmpv2_sys::mpv_get_property(
+                        mpv_handle, dheight_cstr.as_ptr(), MPV_FORMAT_INT64,
+                        &mut h as *mut i64 as *mut _,
+                    );
+
+                    println!("Resolution query: ret_w={}, ret_h={}, w={}, h={}", ret_w, ret_h, w, h);
+
+                    if ret_w >= 0 && ret_h >= 0 && w > 0 && h > 0 {
+                        width = w;
+                        height = h;
+                        println!("Got video resolution: {}x{}", width, height);
+                        log::info!("動画の実際の解像度: {}x{}", width, height);
+                        break 'outer; // 解像度取得成功
+                    } else {
+                        // 取れなかった場合は次の VIDEO_RECONFIG を待つ（bestvideo+bestaudio では複数回発生）
+                        println!("Resolution not yet available (ret_w={}), waiting for next VIDEO_RECONFIG...", ret_w);
                     }
-
-                    if event_id == MPV_EVENT_VIDEO_RECONFIG {
-                        println!("VIDEO_RECONFIG event received");
-                        video_reconfig_received = true;
-                    }
-                }
-            }
-
-            // VIDEO_RECONFIG イベントを受信した後に解像度を取得
-            if video_reconfig_received {
-                let dwidth_cstr = std::ffi::CString::new("width").unwrap();
-                let dheight_cstr = std::ffi::CString::new("height").unwrap();
-
-                // MPV_FORMAT_INT64 = 4
-                const MPV_FORMAT_INT64: u32 = 4;
-
-                let ret_w = libmpv2_sys::mpv_get_property(
-                    mpv_handle,
-                    dwidth_cstr.as_ptr(),
-                    MPV_FORMAT_INT64,
-                    &mut width as *mut i64 as *mut _,
-                );
-                let ret_h = libmpv2_sys::mpv_get_property(
-                    mpv_handle,
-                    dheight_cstr.as_ptr(),
-                    MPV_FORMAT_INT64,
-                    &mut height as *mut i64 as *mut _,
-                );
-
-                println!("After VIDEO_RECONFIG: ret_w={}, ret_h={}, width={}, height={}",
-                         ret_w, ret_h, width, height);
-
-                if ret_w >= 0 && ret_h >= 0 && width > 0 && height > 0 {
-                    println!("Got video resolution: {}x{}", width, height);
-                    log::info!("動画の実際の解像度: {}x{}", width, height);
-
-                    // 再生開始イベントを送信（フロントエンドのステータスを "loading" → "playing" に更新）
-                    if let Some(app) = &app_handle {
-                        #[derive(Clone, serde::Serialize)]
-                        struct PlayingEvent {
-                            status: String,
-                        }
-                        let _ = app.emit("player-status", PlayingEvent { status: "playing".to_string() });
-                        log::info!("player-status イベントを送信しました (playing)");
-                    }
-
-                    break;
                 }
             }
 
             attempts += 1;
             if attempts >= max_attempts {
                 println!("Resolution timeout, using initial size: {}x{}", initial_width, initial_height);
-                log::warn!(
-                    "動画の解像度取得がタイムアウト、初期値を使用: {}x{}",
-                    initial_width, initial_height
-                );
-                width = initial_width as i64;
-                height = initial_height as i64;
+                log::warn!("解像度取得タイムアウト、初期値を使用: {}x{}", initial_width, initial_height);
                 break;
             }
 
@@ -346,6 +349,18 @@ fn syphon_loop(
 
         (width as u32, height as u32)
     };
+
+    // 解像度が確定したら playing 状態を通知
+    if let Some(app) = &app_handle {
+        #[derive(Clone, serde::Serialize)]
+        struct PlayingEvent { status: String, syphon_active: bool }
+        let _ = app.emit("player-status", PlayingEvent {
+            status: "playing".to_string(),
+            syphon_active: true,
+        });
+        log::info!("player-status イベントを送信しました (playing) 解像度={}x{}", actual_width, actual_height);
+    }
+    is_playing.store(true, std::sync::atomic::Ordering::SeqCst);
 
     // FBO とテクスチャを実際の解像度で作成
     println!("Creating FBO with resolution: {}x{}", actual_width, actual_height);
@@ -401,7 +416,7 @@ fn syphon_loop(
                 Ok(_) => {
                     consecutive_errors = 0;
 
-                    // 最初のフレームをログ出力
+                    // 最初のフレームでログ出力
                     if frame_count == 0 {
                         println!("First frame rendered successfully!");
                         log::info!("最初のフレームを描画しました");

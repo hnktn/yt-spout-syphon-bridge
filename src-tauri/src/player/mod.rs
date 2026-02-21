@@ -3,11 +3,16 @@ pub mod audio;
 
 use anyhow::Result;
 use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::output::preview::PreviewHandle;
 #[cfg(target_os = "macos")]
 use crate::output::syphon::{self, SyphonHandle};
 pub use mpv_context::MpvContext;
+
+pub fn resolve_ytdlp_path() -> String {
+    MpvContext::resolve_ytdlp_path()
+}
 
 // ─── プレイヤーの状態 ────────────────────────────────────────────────────────
 
@@ -26,6 +31,8 @@ pub struct PlayerState {
     inner: Arc<Mutex<PlayerInner>>,
     /// Tauri AppHandle（プレビューイベント送信用）
     app_handle: Option<tauri::AppHandle>,
+    /// Syphon スレッドから playing 遷移を通知するフラグ
+    syphon_playing: Arc<AtomicBool>,
 }
 
 struct PlayerInner {
@@ -46,9 +53,9 @@ struct PlayerInner {
     pending_loop: bool,
 }
 
-/// プレビューウィンドウの解像度
-const PREVIEW_WIDTH: u32 = 1280;
-const PREVIEW_HEIGHT: u32 = 720;
+/// 初期 FBO 解像度（動画の実解像度が取得できない場合のフォールバック）
+const PREVIEW_WIDTH: u32 = 1920;
+const PREVIEW_HEIGHT: u32 = 1080;
 
 impl PlayerState {
     pub fn new() -> Self {
@@ -61,11 +68,12 @@ impl PlayerState {
                 status: PlayStatus::Idle,
                 current_url: None,
                 output_active: false,
-                pending_volume: 100, // デフォルトは100%
-                pending_mute: false,  // デフォルトはミュート解除
-                pending_loop: false,  // デフォルトはループなし
+                pending_volume: 100,
+                pending_mute: false,
+                pending_loop: false,
             })),
             app_handle: None,
+            syphon_playing: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -118,8 +126,11 @@ impl PlayerState {
             let handle_ptr = ctx.mpv_handle_ptr();
             let app_clone = self.app_handle.clone();
             let server_name = "yt-spout-syphon-bridge";
+            // playing フラグをリセットして Syphon スレッドに渡す
+            self.syphon_playing.store(false, Ordering::SeqCst);
+            let is_playing = self.syphon_playing.clone();
 
-            match syphon::spawn(handle_ptr, server_name, url, PREVIEW_WIDTH, PREVIEW_HEIGHT, app_clone) {
+            match syphon::spawn(handle_ptr, server_name, url, PREVIEW_WIDTH, PREVIEW_HEIGHT, app_clone, is_playing) {
                 Ok(handle) => {
                     inner.syphon = Some(handle);
                     log::info!("Syphon 出力を起動しました (サーバー名: {})", server_name);
@@ -177,6 +188,14 @@ impl PlayerState {
     // ─── 状態の読み取り ───────────────────────────────────────────────────────
 
     pub fn status(&self) -> PlayStatus {
+        // Syphon スレッドが最初のフレームを描画した場合は Playing に昇格
+        if self.syphon_playing.load(Ordering::SeqCst) {
+            if let Ok(mut inner) = self.inner.lock() {
+                if matches!(inner.status, PlayStatus::Loading) {
+                    inner.status = PlayStatus::Playing;
+                }
+            }
+        }
         self.inner.lock()
             .map(|inner| inner.status.clone())
             .unwrap_or(PlayStatus::Error("Mutex ロック失敗".to_string()))
