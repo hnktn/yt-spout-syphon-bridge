@@ -1,21 +1,34 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!--
+  座標設計:
+  中心: (512, 512)
+  左ノード: (288, 512)  ← 中心から -224px
+  分岐点:   (512, 512)  ← 中心
+  右上ノード: (736, 320) ← 分岐点から (+224, -192)
+  右下ノード: (736, 704) ← 分岐点から (+224, +192)
+
+  右2ノードは中心Y=512から ±192px で完全対称
+  幹の長さ: 224px (288→512)
+  枝の長さ: sqrt(224²+192²) = sqrt(50176+36864) = sqrt(87040) ≈ 295px
+-->
 <svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
   <!-- Background rounded square -->
   <rect x="64" y="64" width="896" height="896" rx="200" fill="#111318"/>
 
-  <!-- Abstract "bridge / split" mark (single color) -->
+  <!-- Bridge / split mark -->
   <g stroke="#FFFFFF" stroke-width="64" stroke-linecap="round" stroke-linejoin="round">
-    <!-- trunk -->
-    <path d="M360 560 L520 560"/>
-    <!-- branches -->
-    <path d="M520 560 L680 408"/>
-    <path d="M520 560 L680 712"/>
+    <!-- trunk: left node → junction (horizontal, Y=512) -->
+    <path d="M288 512 L512 512"/>
+    <!-- upper branch: junction → upper-right node -->
+    <path d="M512 512 L736 320"/>
+    <!-- lower branch: junction → lower-right node -->
+    <path d="M512 512 L736 704"/>
   </g>
 
-  <!-- nodes -->
+  <!-- Nodes -->
   <g fill="#FFFFFF">
-    <circle cx="320" cy="560" r="56"/>
-    <circle cx="720" cy="408" r="56"/>
-    <circle cx="720" cy="712" r="56"/>
+    <circle cx="288" cy="512" r="56"/>
+    <circle cx="736" cy="320" r="56"/>
+    <circle cx="736" cy="704" r="56"/>
   </g>
 </svg>
