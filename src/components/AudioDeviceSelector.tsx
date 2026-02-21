@@ -17,7 +17,7 @@ export default function AudioDeviceSelector({ onSelect, onVolumeChange }: AudioD
 
   useEffect(() => {
     getAudioDevices().then(setDevices);
-  }, [getAudioDevices]);
+  }, []);
 
   const handleSelect = (id: string) => {
     setSelected(id);
@@ -62,7 +62,11 @@ export default function AudioDeviceSelector({ onSelect, onVolumeChange }: AudioD
       <div className="flex items-center gap-2">
         <button
           onClick={handleMuteToggle}
-          className="w-5 h-5 flex items-center justify-center bg-surface-2 border border-surface-border-2 text-text-secondary rounded-sm hover:bg-surface-3 hover:border-surface-border-3 transition-colors"
+          className={`w-5 h-5 flex items-center justify-center rounded-sm border transition-colors ${
+            mute
+              ? "bg-surface-2 border-surface-border-2 text-accent hover:bg-surface-3 hover:border-surface-border-3"
+              : "bg-surface-2 border-surface-border-2 text-text-secondary hover:bg-surface-3 hover:border-surface-border-3"
+          }`}
           title={mute ? "ミュート解除" : "ミュート"}
         >
           {mute ? (
@@ -77,7 +81,7 @@ export default function AudioDeviceSelector({ onSelect, onVolumeChange }: AudioD
           max={100}
           value={volume}
           onChange={(e) => handleVolume(Number(e.target.value))}
-          className="flex-1 h-px bg-surface-2 appearance-none cursor-pointer"
+          className="flex-1 h-1 bg-surface-3 appearance-none cursor-pointer accent-accent rounded-sm"
         />
         <span className="text-xs text-text-secondary font-mono w-7 text-right">{volume}</span>
       </div>
