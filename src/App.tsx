@@ -1,13 +1,20 @@
 import { useState } from "react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { LogicalSize } from "@tauri-apps/api/dpi";
 import { usePlayer } from "./hooks/usePlayer";
 import UrlInput from "./components/UrlInput";
 import AudioDeviceSelector from "./components/AudioDeviceSelector";
 import PreviewCanvas from "./components/PreviewCanvas";
 import PlayerControls from "./components/PlayerControls";
 
+// プレビュー表示・非表示それぞれのウィンドウ高さ
+const HEIGHT_WITH_PREVIEW = 532;
+const HEIGHT_WITHOUT_PREVIEW = 332;
+
 export default function App() {
   const { status, play, stop, pause, setAudioDevice, setVolume } = usePlayer();
   const [url, setUrl] = useState("");
+  const [previewVisible, setPreviewVisible] = useState(true);
 
   const handlePlay = () => {
     if (url.trim()) {
@@ -15,7 +22,13 @@ export default function App() {
     }
   };
 
-  const isActive = status.status === "playing" || status.status === "paused" || status.status === "loading";
+  const handlePreviewToggle = async () => {
+    const next = !previewVisible;
+    setPreviewVisible(next);
+    // プレビュー表示状態に応じてウィンドウ高さを変更
+    const win = getCurrentWindow();
+    await win.setSize(new LogicalSize(360, next ? HEIGHT_WITH_PREVIEW : HEIGHT_WITHOUT_PREVIEW));
+  };
 
   return (
     <div className="min-h-screen bg-surface font-mono text-text-primary flex flex-col overflow-auto">
@@ -27,10 +40,11 @@ export default function App() {
           onSubmit={handlePlay}
           disabled={false}
           isLoading={status.status === "loading"}
+          isPlaying={status.status === "playing" || status.status === "paused"}
         />
 
         {/* プレビュー */}
-        <PreviewCanvas />
+        <PreviewCanvas visible={previewVisible} onToggle={handlePreviewToggle} />
 
         {/* プレイヤーコントロール */}
         <PlayerControls
@@ -38,9 +52,6 @@ export default function App() {
           onPause={pause}
           onStop={stop}
         />
-
-        {/* ステータス表示 */}
-        <StatusBadge status={status} />
 
         {/* Spout/Syphon 出力インジケーター */}
         <OutputIndicator
@@ -68,33 +79,6 @@ export default function App() {
   );
 }
 
-// ─── ステータスバッジ ──────────────────────────────────────────────────────────
-
-function StatusBadge({ status }: { status: { status: string; error?: string } }) {
-  const colorMap: Record<string, string> = {
-    idle: "bg-surface-1 text-text-secondary",
-    loading: "bg-surface-2 text-text-primary",
-    playing: "bg-surface-2 text-accent",
-    paused: "bg-surface-1 text-text-secondary",
-    error: "bg-surface-2 text-accent",
-  };
-
-  const labelMap: Record<string, string> = {
-    idle: "IDLE",
-    loading: "LOADING",
-    playing: "PLAYING",
-    paused: "PAUSED",
-    error: "ERROR",
-  };
-
-  return (
-    <div className={`border border-surface-border rounded-sm px-2 py-1 text-xs uppercase tracking-wide ${colorMap[status.status] ?? colorMap.idle}`}>
-      {labelMap[status.status] ?? status.status}
-      {status.error && <span className="ml-1 opacity-50 normal-case">({status.error})</span>}
-    </div>
-  );
-}
-
 // ─── 出力インジケーター ───────────────────────────────────────────────────────
 
 function OutputIndicator({
@@ -106,13 +90,13 @@ function OutputIndicator({
 }) {
   return (
     <div className="flex gap-2 text-xs bg-surface-1 border border-surface-border rounded-sm p-1.5">
-      <div className={`flex items-center gap-1.5 ${spoutActive ? "text-accent" : "text-text-muted"}`}>
-        <span className={`w-1 h-1 ${spoutActive ? "bg-accent" : "bg-text-muted"}`} />
+      <div className={`flex items-center gap-1.5 ${spoutActive ? "text-accent-green" : "text-text-muted"}`}>
+        <span className={`w-1.5 h-1.5 rounded-full ${spoutActive ? "bg-accent-green" : "bg-text-muted"}`} />
         <span className="uppercase tracking-wide">SPOUT</span>
       </div>
       <div className="w-px bg-surface-border" />
-      <div className={`flex items-center gap-1.5 ${syphonActive ? "text-accent" : "text-text-muted"}`}>
-        <span className={`w-1 h-1 ${syphonActive ? "bg-accent" : "bg-text-muted"}`} />
+      <div className={`flex items-center gap-1.5 ${syphonActive ? "text-accent-green" : "text-text-muted"}`}>
+        <span className={`w-1.5 h-1.5 rounded-full ${syphonActive ? "bg-accent-green" : "bg-text-muted"}`} />
         <span className="uppercase tracking-wide">SYPHON</span>
       </div>
     </div>

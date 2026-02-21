@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
+import { Eye, EyeOff } from "lucide-react";
 
 interface PreviewFramePayload {
   width: number;
@@ -7,7 +8,12 @@ interface PreviewFramePayload {
   data: string; // base64 エンコードされた RGB ピクセルデータ
 }
 
-export default function PreviewCanvas() {
+interface PreviewCanvasProps {
+  visible: boolean;
+  onToggle: () => void;
+}
+
+export default function PreviewCanvas({ visible, onToggle }: PreviewCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -77,17 +83,31 @@ export default function PreviewCanvas() {
   }, []);
 
   return (
-    <div className="flex flex-col gap-2">
-      <label className="text-xs text-gray-400 font-medium uppercase tracking-wide">
-        プレビュー
-      </label>
-      <canvas
-        ref={canvasRef}
-        width={320}
-        height={180}
-        className="w-full bg-black rounded border border-gray-700"
-        style={{ aspectRatio: "auto" }}
-      />
+    <div className="flex flex-col gap-1.5 p-1.5 bg-surface-1 border border-surface-border rounded-sm">
+      <div className="flex items-center justify-between">
+        <label className="text-xs text-text-muted uppercase tracking-wide">
+          PREVIEW
+        </label>
+        <button
+          onClick={onToggle}
+          className="w-5 h-5 flex items-center justify-center bg-surface-2 border border-surface-border-2 text-text-secondary rounded-sm hover:bg-surface-3 hover:border-surface-border-3 transition-colors"
+          title={visible ? "プレビューを非表示" : "プレビューを表示"}
+        >
+          {visible ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
+        </button>
+      </div>
+      {/* DOM から消さず非表示にすることでイベントリスナーを維持する */}
+      <div
+        className="w-full bg-surface rounded-sm border border-surface-border-2"
+        style={{ aspectRatio: "16/9", display: visible ? "block" : "none" }}
+      >
+        <canvas
+          ref={canvasRef}
+          width={320}
+          height={180}
+          className="w-full h-full object-contain"
+        />
+      </div>
     </div>
   );
 }

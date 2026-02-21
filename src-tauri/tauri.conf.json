@@ -14,10 +14,10 @@
       {
         "label": "main",
         "title": "yt-spout-syphon-bridge",
-        "width": 480,
-        "height": 720,
-        "minWidth": 420,
-        "minHeight": 640,
+        "width": 360,
+        "height": 532,
+        "minWidth": 340,
+        "minHeight": 332,
         "resizable": true,
         "decorations": true,
         "transparent": false,
@@ -34,7 +34,8 @@
           "permissions": [
             "core:event:allow-listen",
             "core:event:allow-emit",
-            "core:webview:allow-internal-toggle-devtools"
+            "core:webview:allow-internal-toggle-devtools",
+            "core:window:allow-set-size"
           ]
         }
       ]
