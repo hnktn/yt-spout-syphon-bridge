@@ -16,7 +16,7 @@ export default function PlayerControls({ isPlaying, onPause, onStop }: PlayerCon
   const [initialized, setInitialized] = useState(false);
   const [mediaTitle, setMediaTitle] = useState("");
 
-  // 再生位置とタイトルを定期的に更新
+  // 再生位置を定期的に更新
   useEffect(() => {
     if (!isPlaying) return;
 
@@ -27,10 +27,38 @@ export default function PlayerControls({ isPlaying, onPause, onStop }: PlayerCon
         setTimePos(pos);
         setDuration(dur);
       } catch (err) {
-        // エラーは無視（mpv が停止している場合など）
         console.debug("Failed to get time position:", err);
       }
-    }, 500); // 1000ms → 500ms (より滑らかなUI更新)
+    }, 500);
+
+    return () => clearInterval(interval);
+  }, [isPlaying]);
+
+  // タイトルが取得できるまでポーリング
+  useEffect(() => {
+    if (!isPlaying) return;
+
+    const tryGetTitle = async () => {
+      try {
+        const title = await invoke<string>("get_media_title");
+        // URLっぽいものや空は除外してリトライ
+        if (title && !title.startsWith("http") && !title.startsWith("watch?")) {
+          setMediaTitle(title);
+          return true;
+        }
+      } catch {
+        // 無視
+      }
+      return false;
+    };
+
+    // 最大10秒間、1秒ごとにリトライ
+    let attempts = 0;
+    const interval = setInterval(async () => {
+      const got = await tryGetTitle();
+      attempts++;
+      if (got || attempts >= 10) clearInterval(interval);
+    }, 1000);
 
     return () => clearInterval(interval);
   }, [isPlaying]);
@@ -56,7 +84,10 @@ export default function PlayerControls({ isPlaying, onPause, onStop }: PlayerCon
         console.log("Initialized - loop:", currentLoop, "speed:", currentSpeed, "title:", title);
         setLoop(currentLoop);
         setSpeed(currentSpeed);
-        setMediaTitle(title);
+        // URLやwatchパラメータはタイトルとして表示しない
+        if (title && !title.startsWith("http") && !title.startsWith("watch?")) {
+          setMediaTitle(title);
+        }
         setInitialized(true);
       } catch (err) {
         console.error("Failed to initialize player controls:", err);

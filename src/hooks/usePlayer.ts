@@ -28,17 +28,32 @@ export function usePlayer() {
 
   // player-status イベントをリッスン
   useEffect(() => {
-    const unlisten = listen<{ status: string }>("player-status", (event) => {
-      setStatus((prev) => ({
-        ...prev,
-        status: event.payload.status as PlayerStatus["status"],
-      }));
+    const unlisten = listen<PlayerStatus>("player-status", (event) => {
+      setStatus((prev) => ({ ...prev, ...event.payload }));
     });
 
     return () => {
       unlisten.then((fn) => fn());
     };
   }, []);
+
+  // loading 中は get_status をポーリングしてイベント取りこぼしを防ぐ
+  useEffect(() => {
+    if (status.status !== "loading") return;
+
+    const interval = setInterval(async () => {
+      try {
+        const result = await invoke<PlayerStatus>("get_status");
+        if (result.status !== "loading") {
+          setStatus(result);
+        }
+      } catch {
+        // 無視
+      }
+    }, 500);
+
+    return () => clearInterval(interval);
+  }, [status.status]);
 
   const play = useCallback(async (url: string, quality?: string) => {
     try {
