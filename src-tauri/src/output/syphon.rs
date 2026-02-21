@@ -279,22 +279,28 @@ fn syphon_loop(
     }
 
     // 動画の実際の解像度を取得するまで待機
-    // VIDEO_RECONFIG イベント (id=11) か タイムアウト(10秒) まで待つ
+    // VIDEO_RECONFIG イベント (id=11) が落ち着くまで待ち、最終的な dwidth/dheight を使用する。
+    // bestvideo+bestaudio では VIDEO_RECONFIG が複数回発生するため、
+    // 最後のイベント後に一定時間 (settle_ms) 新しいイベントが来なければ確定とみなす。
     println!("Waiting for video resolution...");
     log::info!("動画の解像度情報を取得中...");
     let (actual_width, actual_height) = unsafe {
         let mut width = initial_width as i64;
         let mut height = initial_height as i64;
         let mut attempts = 0;
-        let max_attempts = 100; // 最大10秒待つ（100ms x 100）
+        let max_attempts = 150; // 最大15秒待つ（100ms x 150）
 
         // MPV_EVENT_VIDEO_RECONFIG = 11
         const MPV_EVENT_VIDEO_RECONFIG: u32 = 11;
         // MPV_FORMAT_INT64 = 4
         const MPV_FORMAT_INT64: u32 = 4;
 
-        'outer: loop {
-            // mpv イベントをチェック（ブロッキングなし）
+        // 最後に VIDEO_RECONFIG を受け取ってから何 tick 待つか（100ms x 5 = 500ms）
+        let settle_ticks = 5usize;
+        let mut ticks_since_last_reconfig: Option<usize> = None;
+
+        loop {
+            // mpv イベントをすべてドレイン
             loop {
                 let event = libmpv2_sys::mpv_wait_event(mpv_handle, 0.0);
                 if event.is_null() { break; }
@@ -305,11 +311,9 @@ fn syphon_loop(
 
                 if event_id == MPV_EVENT_VIDEO_RECONFIG {
                     println!("VIDEO_RECONFIG event received, trying to get resolution...");
-                    // 少し待ってから取得（mpv 内部が確定するまでの猶予）
-                    std::thread::sleep(Duration::from_millis(300));
 
-                    let dwidth_cstr = std::ffi::CString::new("width").unwrap();
-                    let dheight_cstr = std::ffi::CString::new("height").unwrap();
+                    let dwidth_cstr = std::ffi::CString::new("dwidth").unwrap();
+                    let dheight_cstr = std::ffi::CString::new("dheight").unwrap();
                     let mut w = 0i64;
                     let mut h = 0i64;
 
@@ -327,20 +331,31 @@ fn syphon_loop(
                     if ret_w >= 0 && ret_h >= 0 && w > 0 && h > 0 {
                         width = w;
                         height = h;
-                        println!("Got video resolution: {}x{}", width, height);
-                        log::info!("動画の実際の解像度: {}x{}", width, height);
-                        break 'outer; // 解像度取得成功
+                        println!("Candidate resolution: {}x{} (waiting for settle...)", width, height);
+                        log::info!("解像度候補: {}x{} (確定待ち...)", width, height);
+                        ticks_since_last_reconfig = Some(0); // タイマーリセット
                     } else {
-                        // 取れなかった場合は次の VIDEO_RECONFIG を待つ（bestvideo+bestaudio では複数回発生）
-                        println!("Resolution not yet available (ret_w={}), waiting for next VIDEO_RECONFIG...", ret_w);
+                        // dwidth が未確定（-10 等）の場合もタイマーをリセットして次を待つ
+                        println!("Resolution not yet available (ret_w={}), waiting...", ret_w);
+                        ticks_since_last_reconfig = Some(0);
                     }
+                }
+            }
+
+            // settle タイマーが動いていれば進める
+            if let Some(ref mut ticks) = ticks_since_last_reconfig {
+                *ticks += 1;
+                if *ticks >= settle_ticks && width > 0 && height > 0 {
+                    println!("Resolution settled: {}x{}", width, height);
+                    log::info!("動画の実際の解像度（確定）: {}x{}", width, height);
+                    break;
                 }
             }
 
             attempts += 1;
             if attempts >= max_attempts {
-                println!("Resolution timeout, using initial size: {}x{}", initial_width, initial_height);
-                log::warn!("解像度取得タイムアウト、初期値を使用: {}x{}", initial_width, initial_height);
+                println!("Resolution timeout, using: {}x{}", width, height);
+                log::warn!("解像度取得タイムアウト、現在の値を使用: {}x{}", width, height);
                 break;
             }
 
