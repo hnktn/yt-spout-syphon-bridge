@@ -53,7 +53,7 @@
     </g>
 
     <!-- 左ノード: YouTube赤・塗りつぶし -->
-    <circle cx="288" cy="512" r="72" fill="#FF0000"/>
+    <circle cx="288" cy="512" r="80" fill="#FF0000"/>
 
     <!-- 右2ノード: 白・中抜き -->
     <g fill="none" stroke="#FFFFFF" stroke-width="32">
