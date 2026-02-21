@@ -102,7 +102,7 @@ fn render_loop_offscreen(
     let not_current = unsafe { display.create_context(&config, &ctx_attrs)? };
 
     // サーフェスレスコンテキストを current にする（macOS では treat_as_possibly_current を使用）
-    let _gl_ctx: PossiblyCurrentContext = unsafe { not_current.treat_as_possibly_current() };
+    let _gl_ctx: PossiblyCurrentContext = not_current.treat_as_possibly_current();
 
     // GL 関数ポインタをロード
     gl::load_with(|name| {

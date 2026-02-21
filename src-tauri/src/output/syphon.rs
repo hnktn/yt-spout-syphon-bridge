@@ -698,7 +698,7 @@ unsafe fn send_preview_frame_blit(
     width: u32,
     height: u32,
     preview_fbo: gl::types::GLuint,
-    preview_texture: gl::types::GLuint,
+    _preview_texture: gl::types::GLuint,
 ) {
     let preview_width = 320u32;
     let preview_height = ((height as f32 / width as f32) * preview_width as f32).max(1.0) as u32;

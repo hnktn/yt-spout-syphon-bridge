@@ -96,7 +96,7 @@ impl PlayerState {
         log::info!("mpv を初期化: URL={}", url);
 
         // mpv を初期化して再生開始
-        let mut ctx = MpvContext::new(url, quality)?;
+        let ctx = MpvContext::new(url, quality)?;
 
         // UI で設定されたボリュームとミュート状態を適用
         if let Err(e) = ctx.set_volume(inner.pending_volume) {

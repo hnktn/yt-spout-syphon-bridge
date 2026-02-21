@@ -68,14 +68,6 @@ impl MpvContext {
         Ok(Self { mpv })
     }
 
-    /// URL をロードして再生を開始する
-    /// 注意: RenderContext 作成後に呼ぶ必要がある
-    pub fn load_file(&self, url: &str) -> Result<()> {
-        self.mpv.command("loadfile", &[url, "replace"]).map_err(mpv_err)?;
-        log::info!("loadfile コマンドを実行: {}", url);
-        Ok(())
-    }
-
     /// mpv 内部ハンドルへの生ポインタを返す
     ///
     /// このポインタは preview.rs の render_loop で RenderContext を作成するために使う。
