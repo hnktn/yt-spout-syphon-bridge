@@ -16,7 +16,7 @@
   <rect x="64" y="64" width="896" height="896" rx="200" fill="#111318"/>
 
   <!-- Bridge / split mark -->
-  <g stroke="#FFFFFF" stroke-width="64" stroke-linecap="round" stroke-linejoin="round">
+  <g stroke="#FFFFFF" stroke-width="48" stroke-linecap="round" stroke-linejoin="round">
     <!-- trunk: left node → junction (horizontal, Y=512) -->
     <path d="M288 512 L512 512"/>
     <!-- upper branch: junction → upper-right node -->
@@ -25,10 +25,10 @@
     <path d="M512 512 L736 704"/>
   </g>
 
-  <!-- Nodes -->
-  <g fill="#FFFFFF">
-    <circle cx="288" cy="512" r="56"/>
-    <circle cx="736" cy="320" r="56"/>
-    <circle cx="736" cy="704" r="56"/>
+  <!-- Nodes (塗りなし・枠線のみ) -->
+  <g fill="none" stroke="#FFFFFF" stroke-width="48">
+    <circle cx="288" cy="512" r="72"/>
+    <circle cx="736" cy="320" r="72"/>
+    <circle cx="736" cy="704" r="72"/>
   </g>
 </svg>
