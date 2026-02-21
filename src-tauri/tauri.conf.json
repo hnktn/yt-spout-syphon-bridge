@@ -51,9 +51,6 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "externalBin": [
-      "binaries/yt-dlp"
-    ],
     "macOS": {
       "frameworks": ["./bindings/syphon/Syphon.framework"]
     }

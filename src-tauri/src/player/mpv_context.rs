@@ -39,15 +39,12 @@ impl MpvContext {
         mpv.set_property("script-opts", format!("ytdl_hook-ytdl_path={}", ytdlp_path)).map_err(mpv_err)?;
         log::info!("yt-dlp パスを設定: {}", ytdlp_path);
 
-        // Chrome クッキーを使用
-        mpv.set_property("ytdl-raw-options", "cookies-from-browser=chrome").map_err(mpv_err)?;
-
         // 画質設定（デフォルト: best）
         let format = match quality {
             Some("1080p") => "bestvideo[height<=1080]+bestaudio/best[height<=1080]",
             Some("720p")  => "bestvideo[height<=720]+bestaudio/best[height<=720]",
             Some("480p")  => "bestvideo[height<=480]+bestaudio/best[height<=480]",
-            _             => "bestvideo+bestaudio/best",
+            _             => "bestvideo+bestaudio/best",  // デフォルト: 最高画質
         };
         mpv.set_property("ytdl-format", format).map_err(mpv_err)?;
 
@@ -74,29 +71,17 @@ impl MpvContext {
     }
 
     /// yt-dlp のパスを解決する
-    /// 優先順位: 1) .app バンドル内 2) Homebrew 3) フォールバック
-    fn resolve_ytdlp_path() -> String {
-        // 1. バンドル済みバイナリ: 実行ファイルと同じディレクトリに配置される
-        if let Ok(exe) = std::env::current_exe() {
-            if let Some(dir) = exe.parent() {
-                let bundled = dir.join("yt-dlp");
-                if bundled.exists() {
-                    log::info!("バンドル済み yt-dlp を使用: {:?}", bundled);
-                    return bundled.to_string_lossy().to_string();
-                }
-            }
-        }
-
-        // 2. Homebrew の既知パス
+    /// Homebrew または PATH 上の yt-dlp を使用する（要インストール）
+    pub fn resolve_ytdlp_path() -> String {
+        // Homebrew の既知パス
         for path in &["/opt/homebrew/bin/yt-dlp", "/usr/local/bin/yt-dlp"] {
             if std::path::Path::new(path).exists() {
-                log::info!("システムの yt-dlp を使用: {}", path);
+                log::info!("yt-dlp を使用: {}", path);
                 return path.to_string();
             }
         }
-
-        // 3. フォールバック（PATH 任せ）
-        log::warn!("yt-dlp が見つかりません。PATH から解決を試みます。");
+        // PATH 任せ（未インストールの場合は mpv がエラーを出す）
+        log::warn!("yt-dlp が見つかりません。brew install yt-dlp を実行してください。");
         "yt-dlp".to_string()
     }
 
@@ -304,7 +289,7 @@ impl MpvContext {
             Ok(filename) => Ok(filename),
             Err(e) => {
                 log::warn!("filename 取得失敗: {:?}", e);
-                Ok(String::from("(タイトル不明)"))
+                Ok(String::new())
             }
         }
     }

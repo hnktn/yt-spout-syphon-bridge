@@ -16,6 +16,16 @@ pub fn run() {
             player_state.set_app_handle(app.handle().clone());
             app.manage(player_state);
 
+            // yt-dlp をバックグラウンドで起動してキャッシュを温める（初回再生の高速化）
+            let ytdlp_path = player::resolve_ytdlp_path();
+            std::thread::spawn(move || {
+                log::info!("yt-dlp ウォームアップ開始: {}", ytdlp_path);
+                let _ = std::process::Command::new(&ytdlp_path)
+                    .arg("--version")
+                    .output();
+                log::info!("yt-dlp ウォームアップ完了");
+            });
+
             log::info!("yt-spout-syphon-bridge started");
             Ok(())
         })
