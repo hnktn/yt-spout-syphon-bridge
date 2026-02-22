@@ -1,8 +1,9 @@
-# yt-spout-syphon-bridge
-
-YouTube 動画を **yt-dlp** でストリーミング再生し、映像フレームを **Syphon** (macOS) / **Spout** (Windows) でリアルタイムに外部アプリへ転送するデスクトップアプリ。
-
-TouchDesigner, Resolume, VDMX などの映像ツールと組み合わせて使うことを想定しています。
+<div align="center">
+  <img src="src-tauri/icons/128x128@2x.png" width="80" alt="icon" />
+  <h1>yt-spout-syphon-bridge</h1>
+  <p>YouTube 動画を <strong>yt-dlp</strong> でストリーミング再生し、映像フレームを <strong>Syphon</strong> (macOS) / <strong>Spout</strong> (Windows) でリアルタイムに外部アプリへ転送するデスクトップアプリ。</p>
+  <p>TouchDesigner, Resolume, VDMX などの映像ツールと組み合わせて使うことを想定しています。</p>
+</div>
 
 ## 必須の依存関係（事前インストールが必要）
 
@@ -23,7 +24,9 @@ Homebrew 自体がインストールされていない場合は [brew.sh](https:
 
 ## スクリーンショット
 
-![screenshot](docs/screenshot.png)
+<div align="center">
+  <img src="docs/screenshot.png" width="420" alt="screenshot" />
+</div>
 
 ## 機能
 
