@@ -18,6 +18,7 @@ pub struct StatusResponse {
     pub error: Option<String>,
     pub spout_active: bool,
     pub syphon_active: bool,
+    pub ndi_active: bool,
 }
 
 /// オーディオデバイス情報
@@ -48,6 +49,7 @@ pub async fn play(
         error: None,
         spout_active: state.is_output_active(),
         syphon_active: state.is_output_active(),
+        ndi_active: crate::output::ndi::is_enabled() && state.is_output_active(),
     })
 }
 
@@ -64,6 +66,7 @@ pub async fn stop(state: State<'_, PlayerState>) -> Result<StatusResponse, Strin
         error: None,
         spout_active: false,
         syphon_active: false,
+        ndi_active: false,
     })
 }
 
@@ -79,6 +82,7 @@ pub async fn pause(state: State<'_, PlayerState>) -> Result<StatusResponse, Stri
         error: None,
         spout_active: state.is_output_active(),
         syphon_active: state.is_output_active(),
+        ndi_active: crate::output::ndi::is_enabled() && state.is_output_active(),
     })
 }
 
@@ -102,6 +106,7 @@ pub fn get_status(state: State<'_, PlayerState>) -> StatusResponse {
         },
         spout_active: state.is_output_active(),
         syphon_active: state.is_output_active(),
+        ndi_active: crate::output::ndi::is_enabled() && state.is_output_active(),
     }
 }
 
@@ -197,4 +202,24 @@ pub fn get_speed(state: State<'_, PlayerState>) -> Result<f64, String> {
 #[tauri::command]
 pub fn get_media_title(state: State<'_, PlayerState>) -> Result<String, String> {
     state.get_media_title().map_err(|e| e.to_string())
+}
+
+// ─── NDI 出力制御 ──────────────────────────────────────────────────────────
+
+/// NDI が利用可能かどうかを返す（libndi がインストールされているか）
+#[tauri::command]
+pub fn get_ndi_available() -> bool {
+    crate::output::ndi::is_available()
+}
+
+/// NDI 出力の有効/無効を切り替える
+#[tauri::command]
+pub fn set_ndi_enabled(enabled: bool) {
+    crate::output::ndi::set_enabled(enabled);
+}
+
+/// NDI 出力が有効かどうかを返す
+#[tauri::command]
+pub fn get_ndi_enabled() -> bool {
+    crate::output::ndi::is_enabled()
 }

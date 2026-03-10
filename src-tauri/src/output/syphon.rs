@@ -378,6 +378,27 @@ fn syphon_loop(
     let syphon_server = create_syphon_server(server_name, gl_ctx)?;
     println!("Syphon server created");
 
+    // NDI 送信を初期化（有効かつ利用可能な場合のみ）
+    let ndi_sender = if super::ndi::is_available() {
+        match super::ndi::NdiSender::new("yt-spout-syphon-bridge") {
+            Ok(sender) => {
+                println!("NDI sender created");
+                log::info!("NDI 送信を初期化しました");
+                Some(sender)
+            }
+            Err(e) => {
+                println!("NDI sender creation failed: {}", e);
+                log::warn!("NDI 送信の初期化に失敗（Syphon 出力は続行）: {}", e);
+                None
+            }
+        }
+    } else {
+        log::info!("NDI ライブラリが利用不可のため NDI 出力は無効");
+        None
+    };
+    // NDI 用ピクセルバッファ（毎フレームのアロケーション回避のため事前確保）
+    let mut ndi_pixel_buffer: Vec<u8> = Vec::new();
+
     println!("Starting Syphon rendering loop...");
     log::info!("Syphon レンダリング開始: {} (初期解像度: {}x{})", server_name, current_width, current_height);
 
@@ -490,6 +511,15 @@ fn syphon_loop(
                     // Syphon にテクスチャを公開
                     publish_syphon_frame(&syphon_server, texture, current_width, current_height);
 
+                    // NDI にフレームを送信（有効な場合のみ）
+                    if let Some(ref ndi) = ndi_sender {
+                        if super::ndi::is_enabled() {
+                            super::ndi::send_frame_from_fbo(
+                                ndi, fbo, current_width, current_height, &mut ndi_pixel_buffer,
+                            );
+                        }
+                    }
+
                     frame_count += 1;
 
                     // プレビューを送信（毎フレーム、再利用 FBO を使う）
@@ -514,6 +544,12 @@ fn syphon_loop(
 
         // 60fps ターゲット
         std::thread::sleep(Duration::from_millis(16));
+    }
+
+    // NDI 送信を停止
+    if let Some(ndi) = ndi_sender {
+        log::info!("NDI 送信を停止します");
+        drop(ndi);
     }
 
     // クリーンアップ（重要: 順序を守る）

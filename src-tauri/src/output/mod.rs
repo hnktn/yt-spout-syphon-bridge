@@ -1,13 +1,16 @@
 /// GPU テクスチャ共有出力モジュール
 ///
 /// プラットフォームに応じて Spout (Windows) / Syphon (macOS) を切り替える。
-/// 全実装は Phase 3 で行う。
+/// NDI 出力はクロスプラットフォームで利用可能。
 
 #[cfg(target_os = "windows")]
 pub mod spout;
 
 #[cfg(target_os = "macos")]
 pub mod syphon;
+
+// NDI 出力（クロスプラットフォーム）
+pub mod ndi;
 
 // macOS では OpenGL ベースのプレビューを使用（Phase 3 では無効化）
 #[cfg(target_os = "macos")]

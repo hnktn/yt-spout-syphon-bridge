@@ -10,6 +10,7 @@ export interface PlayerStatus {
   error?: string;
   spout_active: boolean;
   syphon_active: boolean;
+  ndi_active: boolean;
 }
 
 export interface AudioDevice {
@@ -24,6 +25,7 @@ export function usePlayer() {
     status: "idle",
     spout_active: false,
     syphon_active: false,
+    ndi_active: false,
   });
 
   // player-status イベントをリッスン
@@ -111,5 +113,35 @@ export function usePlayer() {
     }
   }, []);
 
-  return { status, play, stop, pause, setAudioDevice, setVolume, getAudioDevices };
+  const getNdiAvailable = useCallback(async (): Promise<boolean> => {
+    try {
+      return await invoke<boolean>("get_ndi_available");
+    } catch (err) {
+      console.error("get_ndi_available failed:", err);
+      return false;
+    }
+  }, []);
+
+  const setNdiEnabled = useCallback(async (enabled: boolean) => {
+    try {
+      await invoke("set_ndi_enabled", { enabled });
+      setStatus((prev) => ({ ...prev, ndi_active: enabled }));
+    } catch (err) {
+      console.error("set_ndi_enabled failed:", err);
+    }
+  }, []);
+
+  const getNdiEnabled = useCallback(async (): Promise<boolean> => {
+    try {
+      return await invoke<boolean>("get_ndi_enabled");
+    } catch (err) {
+      console.error("get_ndi_enabled failed:", err);
+      return false;
+    }
+  }, []);
+
+  return {
+    status, play, stop, pause, setAudioDevice, setVolume, getAudioDevices,
+    getNdiAvailable, setNdiEnabled, getNdiEnabled,
+  };
 }

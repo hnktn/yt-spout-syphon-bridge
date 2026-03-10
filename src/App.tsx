@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { LogicalSize } from "@tauri-apps/api/dpi";
 import { usePlayer } from "./hooks/usePlayer";
@@ -12,7 +12,21 @@ const HEIGHT_WITH_PREVIEW = 532;
 const HEIGHT_WITHOUT_PREVIEW = 332;
 
 export default function App() {
-  const { status, play, stop, pause, setAudioDevice, setVolume } = usePlayer();
+  const { status, play, stop, pause, setAudioDevice, setVolume, getNdiAvailable, setNdiEnabled, getNdiEnabled } = usePlayer();
+  const [ndiAvailable, setNdiAvailable] = useState(false);
+  const [ndiEnabled, setNdiEnabledState] = useState(false);
+
+  // NDI の利用可能状態と有効状態を初期化時に取得
+  useEffect(() => {
+    getNdiAvailable().then(setNdiAvailable);
+    getNdiEnabled().then(setNdiEnabledState);
+  }, [getNdiAvailable, getNdiEnabled]);
+
+  const handleNdiToggle = async () => {
+    const next = !ndiEnabled;
+    setNdiEnabledState(next);
+    await setNdiEnabled(next);
+  };
   const [url, setUrl] = useState("");
   const [previewVisible, setPreviewVisible] = useState(true);
 
@@ -53,10 +67,13 @@ export default function App() {
           onStop={stop}
         />
 
-        {/* Spout/Syphon 出力インジケーター */}
+        {/* Spout/Syphon/NDI 出力インジケーター */}
         <OutputIndicator
           spoutActive={status.spout_active}
           syphonActive={status.syphon_active}
+          ndiAvailable={ndiAvailable}
+          ndiEnabled={ndiEnabled}
+          onNdiToggle={handleNdiToggle}
         />
 
         {/* オーディオデバイス選択 */}
@@ -84,9 +101,15 @@ export default function App() {
 function OutputIndicator({
   spoutActive,
   syphonActive,
+  ndiAvailable,
+  ndiEnabled,
+  onNdiToggle,
 }: {
   spoutActive: boolean;
   syphonActive: boolean;
+  ndiAvailable: boolean;
+  ndiEnabled: boolean;
+  onNdiToggle: () => void;
 }) {
   return (
     <div className="flex gap-2 text-xs bg-surface-1 border border-surface-border rounded-sm p-1.5">
@@ -99,6 +122,28 @@ function OutputIndicator({
         <span className={`w-1.5 h-1.5 rounded-full ${syphonActive ? "bg-accent-green" : "bg-text-muted"}`} />
         <span className="uppercase tracking-wide">SYPHON</span>
       </div>
+      <div className="w-px bg-surface-border" />
+      <button
+        onClick={onNdiToggle}
+        disabled={!ndiAvailable}
+        className={`flex items-center gap-1.5 transition-colors ${
+          !ndiAvailable
+            ? "text-text-muted opacity-50 cursor-not-allowed"
+            : ndiEnabled
+              ? "text-accent-green cursor-pointer hover:opacity-80"
+              : "text-text-muted cursor-pointer hover:text-text-secondary"
+        }`}
+        title={
+          !ndiAvailable
+            ? "NDI Tools \u304c\u30a4\u30f3\u30b9\u30c8\u30fc\u30eb\u3055\u308c\u3066\u3044\u307e\u305b\u3093"
+            : ndiEnabled
+              ? "NDI \u51fa\u529b: \u6709\u52b9"
+              : "NDI \u51fa\u529b: \u7121\u52b9"
+        }
+      >
+        <span className={`w-1.5 h-1.5 rounded-full ${ndiEnabled && ndiAvailable ? "bg-accent-green" : "bg-text-muted"}`} />
+        <span className="uppercase tracking-wide">NDI</span>
+      </button>
     </div>
   );
 }

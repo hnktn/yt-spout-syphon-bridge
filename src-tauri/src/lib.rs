@@ -47,6 +47,9 @@ pub fn run() {
             commands::set_speed,
             commands::get_speed,
             commands::get_media_title,
+            commands::get_ndi_available,
+            commands::set_ndi_enabled,
+            commands::get_ndi_enabled,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
